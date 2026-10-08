@@ -1,6 +1,6 @@
 # Decisions
 
-## ORust Phase 6: comment representation
+## Comment representation
 
 - Comments are preserved as exact source slices with byte spans and line
   ranges. This is deliberately lossless and keeps CRLF, tabs, BOMs, Unicode,
@@ -32,7 +32,7 @@ Explicitly shared classes use `Rc<RefCell<T>>` without spawned work and
 `Arc<tokio::sync::Mutex<T>>` when `spawn` appears in the program. This keeps
 single-threaded code lightweight while preserving Tokio's real `Send` and
 `'static` requirements for spawned tasks.
-# Phase 3 module decisions
+# Module decisions
 
 - A configured project is discovered by walking upward for `orust.toml`; its
   `entry` value identifies the crate-root `.or` file.
@@ -54,7 +54,7 @@ single-threaded code lightweight while preserving Tokio's real `Send` and
 - `int` is represented as `i64`, matching Dart's 64-bit integer model. Collection
   lengths are explicitly cast to `i64`; Rust still performs the bounds check.
 - Borrowed class fields share one inferred `'a` lifetime. This keeps the common
-  case readable and leaves named lifetime grouping for a later phase.
+  case readable and leaves named lifetime grouping out of the current syntax.
 - Initializing formals such as `Reader(this.text)` define the constructor
   parameter from the field declaration; a borrowed field therefore produces an
   `&'a` constructor parameter and Rust remains responsible for lifetime checks.
@@ -68,7 +68,7 @@ single-threaded code lightweight while preserving Tokio's real `Send` and
 - The first renderer is intentionally deterministic and plain-text. Cargo
   process streaming and richer terminal rendering belong to later milestones.
 
-## ORust Phase 5: recursive types
+## Recursive types and language features
 
 - Recursive direct class edges are auto-boxed at the syntax-to-Rust boundary.
   Every direct recursive field/payload in the selected component is boxed,
@@ -102,7 +102,7 @@ single-threaded code lightweight while preserving Tokio's real `Send` and
   representation; this keeps aliases usable across ORust/Rust boundaries while
   avoiding an implicit ownership or calling-convention conversion.
 
-## ORust Phase 6 documentation decisions
+## Documentation decisions
 
 - Project-aware documentation lints are recomputed after parsing because a
   standalone `.or` file has no package release metadata. `@since` is checked

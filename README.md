@@ -1,160 +1,259 @@
 # ORust
 
-ORust is an OOP-friendly front end for Rust. It translates `.or` source into ordinary Rust while leaving ownership and borrow checking to `rustc`.
+ORust is an object-oriented language that compiles to ordinary Rust. It adds
+classes, constructors, interfaces, named parameters, and a simpler application
+syntax while keeping Rust ownership, borrowing, lifetimes, traits, and Cargo
+as the authority.
 
-The current prototype supports parsing and emitting classes, real Rust
-borrowing, async Tokio programs, interfaces, generics, enums, shared classes,
-closures, operators, named parameters, collection helpers, lifetime hints, and
-Rust passthrough blocks.
+Write `.or` files, run them with the ORust CLI, and inspect the generated Rust
+when you need complete control.
 
-## Language tour
+## Features
 
-Classes are Rust structs plus `impl` blocks. `int` is a 64-bit `i64` value;
-ownership is never hidden:
+- Classes, fields, constructors, methods, and interfaces
+- Rust-compatible ownership with `lend`, `lend mut`, and `copy`
+- Async functions, `await`, tasks, streams, channels, and Tokio integration
+- Rust blocks, Rust imports, Rust types, and external Cargo crates
+- Modules shared between `.or` and `.rs` files
+- Generics, enums, records, patterns, iterators, options, and results
+- Source-mapped diagnostics, formatting, linting, and generated Rust output
+- VS Code language support through the ORust language server
+
+## Installation
+
+### One-command installer
+
+Install Rust first if it is not already installed:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Then install the ORust CLI and language server from the public repository:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh | bash
+```
+
+The installer detects your platform, builds `orust` and `orust-lsp` locally,
+places them in Cargo's binary directory, checks for Rust Analyzer, and offers
+to install missing Rust components. It supports macOS and Linux directly, and
+Windows through Git Bash or WSL.
+
+Verify the installation:
+
+```sh
+orust --version
+orust-lsp --version
+```
+
+The installer supports unattended installation:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  | bash -s -- --all --non-interactive
+```
+
+When `orust-cli` and `orust-lsp` are available on crates.io, they can also be
+installed with Cargo:
+
+```sh
+cargo install orust-cli
+cargo install orust-lsp
+```
+
+## Quick start
+
+Create a project:
+
+```sh
+orust new hello-orust
+cd hello-orust
+orust run
+```
+
+Create a file named `src/main.or`:
 
 ```orust
 class Counter {
-  int count = 0;
-  void inc() { count++; }
+  int value = 0;
+
+  void increment() {
+    value++;
+  }
 }
 
 void main() {
   var counter = new Counter();
-  counter.inc();
-  print(counter.count);
+  counter.increment();
+  print(counter.value);
 }
 ```
 
-Use `lend` for a shared borrow, `lend mut` for an exclusive mutable borrow, and
-`copy` when a value should be cloned. Mark a class `shared` only when shared
-ownership is intended; ORust then emits `Rc<RefCell<...>>`, or
-`Arc<tokio::sync::Mutex<...>>` when spawned work requires thread-safe sharing.
+Run it with:
 
-Interfaces emit traits, `implements` emits trait implementations, and owned
-interface values use `Box<dyn Trait>`. `T?` emits `Option<T>`, with `?.` and
-`??` available for optional values. `async`, `await`, `spawn`, `Future<T>`,
-`Stream<T>`, and `Channel<T>` map to Tokio/runtime primitives while preserving
-`Send` and `'static` constraints.
+```sh
+orust run
+```
 
-Phase 5 adds Rust-shaped depth without replacing Rust semantics:
+ORust generates Rust under `target/rust/`. Cargo compiles that Rust and runs
+the resulting binary. The generated project includes `orust-runtime`
+automatically; users do not install the runtime as a global command.
+
+## Language examples
+
+### Ownership and borrowing
+
+Use `lend` when a function should borrow a value and `copy` when an owned clone
+is intended:
 
 ```orust
-class Node {
-  int value;
-  Node? next;
-  Node(this.value, this.next);
+String shout(lend String value) {
+  return value.toUpperCase();
 }
 
-void inspect(List<String> values) {
-  for (var value in values) {
-    print(value.toUpperCase());
+void main() {
+  var message = "hello";
+  print(shout(lend message));
+  print(message);
+}
+```
+
+### Async code
+
+```orust
+async Future<String> load_message() {
+  await Future.delayed(100.millis);
+  return "ready";
+}
+
+async void main() {
+  var message = await load_message();
+  print(message);
+}
+```
+
+ORust preserves Tokio and Rust's `Send` and `'static` requirements. See
+[async semantics](docs/async.md).
+
+### Records and collections
+
+```orust
+type User(String name, int age);
+
+void main() {
+  var users = [
+    new User("Ada", 36),
+    new User("Grace", 37),
+  ];
+
+  for (var user in users) {
+    print(user.name);
   }
-  var middle = values[1..];
 }
 ```
 
-Direct recursive fields are boxed automatically at the generated Rust
-boundary, slices use checked bounds, and `for-in` borrows by default. Interfaces
-support `extends` and associated types; `typedef` is transparent, while
-`type EmailId(String);` is a distinct newtype. See the Phase 5 feature guides:
-[recursive types](docs/recursive-types.md), [slices](docs/slices.md),
-[patterns](docs/patterns.md), [iterators](docs/iterators.md),
-[traits](docs/traits.md), [strings](docs/strings.md), and
-[records](docs/records.md), and [numbers](docs/numbers.md).
+More examples are in [`examples/`](examples).
 
-Operator methods emit Rust operator traits. Named and optional parameters use a
-generated parameter struct, so `greet(name: "Jesse")` is explicit in generated
-Rust and omitted defaults remain visible.
+## Rust interoperability
 
-For the complete syntax and ownership rules, see [AGENTS.md](AGENTS.md),
-[async semantics](docs/async.md), and [polymorphism](docs/polymorphism.md).
-The next planned module work is tracked in [Phase3.md](Phase3.md).
+ORust and Rust can be used in the same project. Declare dependencies in
+`Cargo.toml` or `orust.toml`; Cargo resolves them normally.
 
-## Installing a release
-
-Pushing a version tag such as `v0.1.0` runs the release workflow. It builds
-`orust` and `orust-lsp` for macOS Apple Silicon, macOS Intel, Linux x64, and
-Windows x64, packages the runtime with each archive, and attaches the
-installable archives to the GitHub Release. The VS Code extension is released
-independently from its own repository.
-
-Download the archive for the host platform, put `orust` and `orust-lsp` on
-`PATH`. Install the VS Code extension separately from its own repository.
-
-For maintainers, publish a release with:
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
+```toml
+[dependencies]
+serde_json = "1"
 ```
 
-Release archives are self-contained and include `runtime/`, so generated
-Cargo projects do not depend on a checkout of this repository.
-
-### Publishing `orust-runtime`
-
-The runtime is prepared as an independent crates.io package. Validate it
-before publishing:
-
-```sh
-cargo package -p orust-runtime
-```
-
-After logging in with `cargo login` and confirming the version is ready:
-
-```sh
-cargo publish -p orust-runtime
-```
-
-Publishing is intentionally manual so a release cannot accidentally publish a
-new runtime version before its generated-code compatibility has been checked.
-
-Projects may filter local imports with `show` and `hide`:
+Use a Rust import and a Rust block when an API needs exact Rust syntax:
 
 ```orust
-import 'models/user.or' show User, Admin hide Secret;
-import 'utils/strings.or' as strings;
+rust use serde_json::json;
+
+void main() {
+  rust {
+    let value = json!({ "language": "ORust" });
+    println!("{}", value["language"]);
+  }
+}
 ```
 
-Imports are emitted as explicit Rust `use` statements. Rust remains the
-authority for privacy and type errors. Projects may use either `orust.toml`
-or a standard `Cargo.toml`; dependency entries are forwarded to the generated
-Cargo project.
+Handwritten `.rs` files can live beside `.or` files. ORust preserves the Rust
+module structure and Cargo remains responsible for compiling both languages.
+See [modules](docs/modules.md) and [Rust/ORust interoperability](docs/rust-orust-interop-tags.md).
 
-For example, a Cargo manifest can declare `serde_json`, then an embedded Rust
-block can use `serde_json::json!` normally.
+## CLI commands
 
 ```sh
-cargo run -p orust-cli -- check tests/cases/hello.or
-cargo run -p orust-cli -- emit tests/cases/hello.or
-cargo run -p orust-cli -- build tests/cases/hello.or
-cargo run -p orust-cli -- build --lib tests/cases/hello.or
-cargo run -p orust-cli -- run tests/cases/hello.or
-cargo run -p orust-cli -- format tests/cases/hello.or --dry-run
-cargo run -p orust-cli -- lint tests/cases/hello.or
-cargo run -p orust-cli -- new my-orust-project
-cargo run -p orust-cli -- new my-orust-library --lib
-cargo run -p orust-cli -- explain OR0005
+orust new my-project             # create an application
+orust new my-library --lib       # create a library
+orust run                        # generate, compile, and run
+orust build                      # generate and compile
+orust check                      # parse and validate
+orust lint                       # report source lints
+orust format                     # format an ORust file
+orust format --dry-run           # preview formatting changes
+orust emit                       # print generated Rust
+orust explain OR0005             # explain a diagnostic code
 ```
 
-The root [examples](examples) directory contains four runnable programs:
-`borrowing.or` demonstrates `lend` and shared state, `records.or` combines
-records and collections, `async.or` demonstrates Tokio-backed `Future`/`await`,
-and `rust-interop.or` shows direct Rust imports and passthrough. Run any one
-with `orust run examples/<name>.or`. Once the CLI is installed, a project can
-be scaffolded with `orust new my-orust-project` and run from its directory with
-`orust run`.
+The CLI accepts a file, project directory, `orust.toml`, or `Cargo.toml` as
+the input context. From a project root, `orust run` uses the configured entry
+file and generated Cargo project.
 
-Editor integration is provided by the Rust `orust-lsp` server. Build it with
-`cargo build -p orust-lsp`, then set the VS Code extension's `orust.lspPath`
-setting to `target/debug/orust-lsp` (or put `orust-lsp` on `PATH`). The server
-uses the same parser, symbol model, diagnostics, and emitter as the CLI.
-It registers only `.or` documents; `.rs` files continue to use the normal
-`rust-analyzer` extension. In a mixed Cargo project both language servers run
-side by side and Cargo/rustc remain the shared compilation authority.
+## VS Code
 
-The language tour and implementation rules are documented in [AGENTS.md](AGENTS.md). Progress is tracked in [Phases.md](Phases.md). Generated Rust projects and Rust JSON diagnostics are written under `target/rust/`; built binaries are copied to `target/<package-name>`.
+Install the ORust VS Code extension from its separate extension repository or
+release package. Install `orust-lsp` with the installer above and ensure
+Cargo's binary directory is on `PATH`.
 
-Diagnostic behavior, examples, documentation warnings, and exact source-span
-tracking are described in [docs/diagnostics.md](docs/diagnostics.md) and the
-[ORust diagnostic code registry](docs/error-codes.md).
+The extension provides syntax highlighting, diagnostics, hover information,
+completion, formatting, source navigation, run commands, and debug commands.
+Rust sections continue to use the normal Rust Analyzer extension.
+
+## Documentation
+
+- [Runtime architecture](docs/runtime.md)
+- [Async and Tokio semantics](docs/async.md)
+- [Modules and Cargo dependencies](docs/modules.md)
+- [Rust/ORust interoperability](docs/rust-orust-interop-tags.md)
+- [Ownership and cleanup](docs/drop.md)
+- [Diagnostics and error codes](docs/diagnostics.md)
+- [Traits and polymorphism](docs/traits.md)
+- [Records](docs/records.md), [strings](docs/strings.md), and [numbers](docs/numbers.md)
+- [Patterns](docs/patterns.md), [iterators](docs/iterators.md), and [slices](docs/slices.md)
+
+## Troubleshooting
+
+### `orust: command not found`
+
+Add Cargo's binary directory to your shell `PATH`:
+
+```sh
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+Restart the terminal after changing your shell profile.
+
+### Rust Analyzer is unavailable
+
+Install the component with:
+
+```sh
+rustup component add rust-analyzer
+```
+
+The ORust extension can still parse and run `.or` files without Rust Analyzer,
+but embedded Rust completion and diagnostics will be limited.
+
+### Cargo dependency errors
+
+Run the command from the project directory and check `Cargo.toml` or
+`orust.toml`. Third-party crates must be declared there before they can be
+used by Rust blocks or generated Rust.
+
+## License
+
+ORust is distributed under the [MIT License](LICENSE).

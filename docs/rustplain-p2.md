@@ -48,5 +48,5 @@ rustplain --raw check --workspace
 ```
 
 The current wrapper is intentionally streaming and deterministic. The richer
-two-phase handling for `run` and `test`—separating build diagnostics from the
+two-step handling for `run` and `test`—separating build diagnostics from the
 program's own stdout/stderr—is a later P2 refinement.

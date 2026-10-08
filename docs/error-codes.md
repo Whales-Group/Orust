@@ -1,7 +1,7 @@
 # ORust diagnostic codes
 
 Friendly diagnostics use stable `OR` codes. The registry starts with the
-Phase 4 foundation codes; new codes are appended and existing codes are never
+Foundation codes; new codes are appended and existing codes are never
 renumbered.
 
 | Code | Rust diagnostics | Meaning |
