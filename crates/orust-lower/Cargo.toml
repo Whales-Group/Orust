@@ -2,6 +2,11 @@
 name = "orust-lower"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "Semantic lowering support for ORust programs."
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 orust-syntax = { version = "0.1.0", path = "../orust-syntax" }

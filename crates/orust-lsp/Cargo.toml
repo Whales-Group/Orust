@@ -2,6 +2,11 @@
 name = "orust-lsp"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "Language Server Protocol implementation for ORust files."
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
 
 [[bin]]
 name = "orust-lsp"

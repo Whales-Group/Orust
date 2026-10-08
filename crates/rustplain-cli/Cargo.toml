@@ -2,6 +2,11 @@
 name = "rustplain-cli"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "Plain-language explanations for Rust compiler and Cargo errors."
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
 
 [[bin]]
 name = "rustplain"

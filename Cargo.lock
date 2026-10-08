@@ -534,7 +534,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "orust-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "orust-diag",
  "orust-emit",
@@ -544,7 +544,7 @@ dependencies = [
 
 [[package]]
 name = "orust-conformance"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "orust-emit",
  "orust-syntax",
@@ -552,7 +552,7 @@ dependencies = [
 
 [[package]]
 name = "orust-diag"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "orust-emit",
  "orust-syntax",
@@ -561,28 +561,28 @@ dependencies = [
 
 [[package]]
 name = "orust-emit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "orust-syntax",
 ]
 
 [[package]]
 name = "orust-fuzz-smoke"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "orust-syntax",
 ]
 
 [[package]]
 name = "orust-lower"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "orust-syntax",
 ]
 
 [[package]]
 name = "orust-lsp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "orust-emit",
  "orust-syntax",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "orust-runtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "futures",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "orust-syntax"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proptest",
 ]
@@ -793,14 +793,14 @@ dependencies = [
 
 [[package]]
 name = "rustplain-cargo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rustplain-diag",
 ]
 
 [[package]]
 name = "rustplain-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "rustplain-cargo",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "rustplain-diag"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -819,14 +819,14 @@ dependencies = [
 
 [[package]]
 name = "rustplain-explain"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rustplain-diag",
 ]
 
 [[package]]
 name = "rustplain-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rustplain-diag",
  "rustplain-explain",

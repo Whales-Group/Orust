@@ -2,6 +2,11 @@
 name = "rustplain-explain"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "Plain-language explanations for structured Rust diagnostics."
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 rustplain-diag = { version = "0.1.0", path = "../rustplain-diag" }

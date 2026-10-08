@@ -2,6 +2,11 @@
 name = "rustplain-diag"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "Structured diagnostic types for rustplain."
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

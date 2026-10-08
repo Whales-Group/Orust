@@ -2,6 +2,11 @@
 name = "orust-syntax"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+description = "Parser and syntax model for the ORust language."
+readme = "README.md"
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 path = "src/lib.rs"
