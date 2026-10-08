@@ -91,6 +91,24 @@ git push origin v0.1.0
 Release archives are self-contained and include `runtime/`, so generated
 Cargo projects do not depend on a checkout of this repository.
 
+### Publishing `orust-runtime`
+
+The runtime is prepared as an independent crates.io package. Validate it
+before publishing:
+
+```sh
+cargo package -p orust-runtime
+```
+
+After logging in with `cargo login` and confirming the version is ready:
+
+```sh
+cargo publish -p orust-runtime
+```
+
+Publishing is intentionally manual so a release cannot accidentally publish a
+new runtime version before its generated-code compatibility has been checked.
+
 Projects may filter local imports with `show` and `hide`:
 
 ```orust
