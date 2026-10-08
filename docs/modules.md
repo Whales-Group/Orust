@@ -1,7 +1,7 @@
 # ORust modules
 
 An `.or` file is a Rust module. Directories become parent modules, and the
-entry file named by `orust.toml` is the generated crate root. Items are private
+entry file `src/main.or` (or `src/lib.or` for a library) is the generated crate root. Items are private
 unless their declaration starts with `export`; exported classes expose their
 constructor, fields, and methods as ordinary Rust `pub` items.
 
@@ -30,9 +30,9 @@ name `ExternalUser`.
 Re-exporting a module with `export '...' show ...` follows the same bridge and
 can be imported by downstream ORust files without losing the Rust-facing name.
 
-Projects may use either `orust.toml` or a standard `Cargo.toml`. The CLI uses
-`orust.toml` when both exist; otherwise it detects `Cargo.toml` and defaults to
-`src/main.or`. Dependency, feature, dev-dependency, build-dependency, workspace
+Projects use a standard `Cargo.toml`. The CLI defaults to `src/main.or` for an
+application and `src/lib.or` for a library. Existing `orust.toml` projects are
+still accepted for migration. Dependency, feature, dev-dependency, build-dependency, workspace
 dependency, target-specific dependency, and Cargo patch/replace entries are
 copied into the generated Cargo project, so crates such as `serde_json`,
 `reqwest`, and Tokio extensions are resolved by Cargo.

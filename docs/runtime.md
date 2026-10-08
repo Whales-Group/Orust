@@ -24,10 +24,12 @@ generated ORust libraries. See [modules](modules.md) and
 
 ## Generated projects
 
-Users install the `orust` executable, not the runtime library:
+Users install the `orust` executable and prepare the runtime through the public
+installer:
 
 ```sh
-cargo install orust-cli
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh | bash
 orust new my-project
 cd my-project
 orust run

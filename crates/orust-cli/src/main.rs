@@ -799,7 +799,7 @@ fn explain_code(code: &str) -> Option<&'static str> {
 fn add_dependency(spec: &str) -> Result<PathBuf, String> {
     let mut root = env::current_dir().map_err(|error| error.to_string())?;
     let manifest: Option<PathBuf> = loop {
-        let found = ["orust.toml", "Cargo.toml"]
+        let found = ["Cargo.toml", "orust.toml"]
             .iter()
             .map(|name| root.join(name))
             .find(|candidate| candidate.exists());
@@ -837,6 +837,47 @@ fn add_dependency(spec: &str) -> Result<PathBuf, String> {
     contents.push_str(&format!("{name} = \"{requirement}\"\n"));
     fs::write(&manifest, contents).map_err(|error| error.to_string())?;
     Ok(manifest)
+}
+
+fn project_manifest_from_current_dir() -> Result<PathBuf, String> {
+    let mut root = env::current_dir().map_err(|error| error.to_string())?;
+    loop {
+        let cargo_manifest = root.join("Cargo.toml");
+        if is_cargo_project_manifest(&cargo_manifest) {
+            return Ok(cargo_manifest);
+        }
+        let orust_manifest = root.join("orust.toml");
+        if orust_manifest.exists() {
+            return Ok(orust_manifest);
+        }
+        if !root.pop() {
+            return Err("could not find Cargo.toml in this directory or its parents".into());
+        }
+    }
+}
+
+fn run_cargo_dependency_command(operation: &str) -> ExitCode {
+    let manifest = match project_manifest_from_current_dir() {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut command = Command::new("cargo");
+    command.args([operation, "--manifest-path", manifest.to_str().unwrap()]);
+    match command.status() {
+        Ok(status) if status.success() => ExitCode::SUCCESS,
+        Ok(status) => status
+            .code()
+            .and_then(|code| u8::try_from(code).ok())
+            .map(ExitCode::from)
+            .unwrap_or(ExitCode::FAILURE),
+        Err(error) => {
+            eprintln!("error: could not invoke cargo {operation}: {error}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn recursive_notes(program: &orust_syntax::Program) -> Vec<String> {
@@ -1108,6 +1149,12 @@ fn cargo_dependency_lines(config: Option<&str>) -> String {
     output
 }
 
+fn cargo_declares_runtime(config: Option<&str>) -> bool {
+    cargo_dependency_lines(config)
+        .lines()
+        .any(|line| line.trim_start().starts_with("orust-runtime"))
+}
+
 fn cargo_section_lines(config: Option<&str>, section: &str) -> String {
     let Some(config) = config else {
         return String::new();
@@ -1256,29 +1303,19 @@ fn project_manifest_for(path: &std::path::Path) -> Option<PathBuf> {
         path
     };
     start.ancestors().find_map(|ancestor| {
-        let orust_manifest = ancestor.join("orust.toml");
-        if orust_manifest.exists() {
-            return Some(orust_manifest);
-        }
         let cargo_manifest = ancestor.join("Cargo.toml");
-        is_cargo_project_manifest(&cargo_manifest).then_some(cargo_manifest)
+        if is_cargo_project_manifest(&cargo_manifest) {
+            return Some(cargo_manifest);
+        }
+        ancestor
+            .join("orust.toml")
+            .exists()
+            .then(|| ancestor.join("orust.toml"))
     })
 }
 
 fn project_entry_for(directory: &std::path::Path) -> Option<PathBuf> {
     for ancestor in directory.ancestors() {
-        let orust_manifest = ancestor.join("orust.toml");
-        if orust_manifest.exists() {
-            let entry = fs::read_to_string(&orust_manifest)
-                .ok()
-                .and_then(|text| manifest_value(&text, "entry"))
-                .unwrap_or_else(|| "src/main.or".to_owned());
-            let candidate = ancestor.join(entry);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-
         let cargo_manifest = ancestor.join("Cargo.toml");
         if is_cargo_project_manifest(&cargo_manifest) {
             let orust_entry = ancestor.join("src/main.or");
@@ -1288,6 +1325,18 @@ fn project_entry_for(directory: &std::path::Path) -> Option<PathBuf> {
             let rust_entry = ancestor.join("src/main.rs");
             if rust_entry.exists() {
                 return Some(rust_entry);
+            }
+        }
+
+        let orust_manifest = ancestor.join("orust.toml");
+        if orust_manifest.exists() {
+            let entry = fs::read_to_string(&orust_manifest)
+                .ok()
+                .and_then(|text| manifest_value(&text, "entry"))
+                .unwrap_or_else(|| "src/main.or".to_owned());
+            let candidate = ancestor.join(entry);
+            if candidate.exists() {
+                return Some(candidate);
             }
         }
     }
@@ -1438,12 +1487,11 @@ fn write_generated_project_tree_at(
     let mut source_root = entry_path.parent().unwrap().to_path_buf();
     let mut config = None;
     for candidate in entry_path.ancestors() {
-        let orust_manifest = candidate.join("orust.toml");
         let cargo_manifest = candidate.join("Cargo.toml");
-        let path = if orust_manifest.exists() {
-            Some(orust_manifest)
-        } else if cargo_manifest.exists() && is_cargo_project_manifest(&cargo_manifest) {
+        let path = if cargo_manifest.exists() && is_cargo_project_manifest(&cargo_manifest) {
             Some(cargo_manifest)
+        } else if candidate.join("orust.toml").exists() {
+            Some(candidate.join("orust.toml"))
         } else {
             None
         };
@@ -1559,7 +1607,15 @@ fn write_generated_project_tree_at(
     } else {
         format!("\n{patch_sections}")
     };
-    let manifest = format!("[workspace]{workspace_dependency_section}\n\n[package]\nname = \"{package_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}{feature_section}[dependencies]\norust-runtime = {{ path = \"{}\" }}\n{}{dev_dependency_section}{build_dependency_section}{target_dependency_section}{patch_section}", runtime_path.display(), cargo_dependency_lines(config_text.as_deref()));
+    let runtime_dependency = if cargo_declares_runtime(config_text.as_deref()) {
+        String::new()
+    } else {
+        format!(
+            "orust-runtime = {{ path = \"{}\" }}\n",
+            runtime_path.display()
+        )
+    };
+    let manifest = format!("[workspace]{workspace_dependency_section}\n\n[package]\nname = \"{package_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}{feature_section}[dependencies]\n{runtime_dependency}{}{dev_dependency_section}{build_dependency_section}{target_dependency_section}{patch_section}", cargo_dependency_lines(config_text.as_deref()));
     fs::write(project.join("Cargo.toml"), manifest).map_err(|e| e.to_string())?;
     if let Some(workspace_root) = runtime_path.parent().and_then(|path| path.parent()) {
         let lock = workspace_root.join("Cargo.lock");
@@ -1910,6 +1966,9 @@ fn main() -> ExitCode {
         let directory = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         path = project_entry_for(&directory).map(|entry| entry.to_string_lossy().into_owned());
     }
+    if matches!(command.as_str(), "fetch" | "update") {
+        return run_cargo_dependency_command(&command);
+    }
     if command == "new" {
         let Some(project) = path else {
             eprintln!("usage: orust new <project-directory> [--lib | --workspace]");
@@ -1940,20 +1999,20 @@ fn main() -> ExitCode {
         };
         let manifest = if workspace {
             if library {
-                "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nentry = \"src/lib.or\"\n"
+                "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"target/rust/src/lib.rs\"\n\n[dependencies]\norust-runtime = \"0.1\"\n"
             } else {
-                "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nentry = \"src/main.or\"\n"
+                "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"orust-project\"\npath = \"target/rust/src/main.rs\"\n\n[dependencies]\norust-runtime = \"0.1\"\n"
             }
         } else {
             if library {
-                "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nentry = \"src/lib.or\"\n"
+                "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"target/rust/src/lib.rs\"\n\n[dependencies]\norust-runtime = \"0.1\"\n"
             } else {
-                "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nentry = \"src/main.or\"\n"
+                "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"orust-project\"\npath = \"target/rust/src/main.rs\"\n\n[dependencies]\norust-runtime = \"0.1\"\n"
             }
         };
         let result = fs::create_dir_all(directory.join("src"))
             .and_then(|_| fs::create_dir_all(directory.join("tests")))
-            .and_then(|_| fs::write(directory.join("orust.toml"), manifest))
+            .and_then(|_| fs::write(directory.join("Cargo.toml"), manifest))
             .and_then(|_| fs::write(directory.join("src").join(source_name), source))
             .and_then(|_| {
                 if library {
@@ -2239,7 +2298,7 @@ fn main() -> ExitCode {
         "emit" | "check" | "build" | "run" | "test"
     ) || path.is_none()
     {
-        eprintln!("usage: orust <check|emit|build|run|test> [file.or|main.rs] [--features <list>]\n       orust format <file.or> [--dry-run]\n       orust lint <file.or> [--features <list>]\n       orust new <project-directory> [--lib | --workspace]\n       orust add <crate[@version]>\n       orust explain <OR-code-or-rustc-code>");
+        eprintln!("usage: orust <check|emit|build|run|test> [file.or|main.rs] [--features <list>]\n       orust format <file.or> [--dry-run]\n       orust lint <file.or> [--features <list>]\n       orust new <project-directory> [--lib | --workspace]\n       orust add <crate[@version]>\n       orust fetch\n       orust update\n       orust explain <OR-code-or-rustc-code>");
         return ExitCode::from(2);
     }
     let path = path.unwrap();

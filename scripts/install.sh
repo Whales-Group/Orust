@@ -3,15 +3,19 @@ set -eu
 
 # Public ORust installer. It is safe to run from curl | bash because prompts
 # use /dev/tty when the script itself is being read from standard input.
-ORUST_REPOSITORY="${ORUST_REPOSITORY:-https://github.com/Jesse-Dan/Orust.git}"
+ORUST_REPOSITORY="${ORUST_REPOSITORY:-https://github.com/Whales-Group/Orust.git}"
 ORUST_REF="${ORUST_REF:-main}"
 CARGO_COMMAND="${CARGO_COMMAND:-cargo}"
 RUSTUP_COMMAND="${RUSTUP_COMMAND:-rustup}"
 INSTALL_CLI=1
 INSTALL_LSP=1
+INSTALL_RUNTIME=1
 INSTALL_RUST_ANALYZER=0
 CREATE_PROJECT=""
 NON_INTERACTIVE=0
+UPDATE_ONLY=0
+WORKSPACE_DIR=""
+CARGO_BIN_DIR="${CARGO_HOME:-${HOME}/.cargo}/bin"
 
 say() { printf '%s\n' "[orust] $*"; }
 warn() { printf '%s\n' "[orust] warning: $*" >&2; }
@@ -21,13 +25,15 @@ usage() {
     cat <<'USAGE'
 Usage: install.sh [options]
 
-Installs ORust CLI tools from the public GitHub repository.
+Installs the ORust user tools from the public GitHub repository.
 
 Options:
-  --all                  Install CLI, LSP, Rust Analyzer, and Rust toolchain
-  --cli                  Install only the orust CLI
-  --lsp                  Install only orust-lsp
-  --rust-analyzer        Install Rust Analyzer through rustup when missing
+  --all                  Install CLI, runtime, LSP, and Rust Analyzer when available
+  --cli                  Install only the orust CLI and runtime
+  --lsp                  Install only orust-lsp and runtime
+  --runtime              Pre-fetch the published orust-runtime crate
+  --rust-analyzer        Try to install Rust Analyzer through rustup when missing
+  --update               Check the repository and update selected installed tools
   --project NAME         Create a starter project after installation
   --non-interactive      Do not prompt; install selected/default components
   --help                 Show this help
@@ -35,6 +41,9 @@ Options:
 Environment:
   ORUST_REF              Git branch or tag; default: main
   ORUST_REPOSITORY       Git repository URL
+
+The runtime is a library, not an executable. It is made available through
+Cargo's registry cache and is added automatically to new ORust projects.
 USAGE
 }
 
@@ -43,15 +52,23 @@ while (($# > 0)); do
         --all)
             INSTALL_CLI=1
             INSTALL_LSP=1
+            INSTALL_RUNTIME=1
             INSTALL_RUST_ANALYZER=1
             ;;
         --cli)
             INSTALL_CLI=1
             INSTALL_LSP=0
+            INSTALL_RUNTIME=1
             ;;
         --lsp)
             INSTALL_CLI=0
             INSTALL_LSP=1
+            INSTALL_RUNTIME=1
+            ;;
+        --runtime)
+            INSTALL_CLI=0
+            INSTALL_LSP=0
+            INSTALL_RUNTIME=1
             ;;
         --rust-analyzer)
             INSTALL_RUST_ANALYZER=1
@@ -63,6 +80,9 @@ while (($# > 0)); do
             ;;
         --non-interactive)
             NON_INTERACTIVE=1
+            ;;
+        --update)
+            UPDATE_ONLY=1
             ;;
         --help|-h)
             usage
@@ -113,11 +133,7 @@ if [[ "${PROMPT_FD}" -ne 0 ]]; then
     say "Choose what to install:"
     ask_yes_no "Install the orust CLI?" y && INSTALL_CLI=1 || INSTALL_CLI=0
     ask_yes_no "Install orust-lsp?" y && INSTALL_LSP=1 || INSTALL_LSP=0
-    if command -v rust-analyzer >/dev/null 2>&1; then
-        say "Rust Analyzer is already installed: $(command -v rust-analyzer)"
-    elif ask_yes_no "Install Rust Analyzer for ${PLATFORM}?" y; then
-        INSTALL_RUST_ANALYZER=1
-    fi
+    ask_yes_no "Prepare the orust-runtime crate?" y && INSTALL_RUNTIME=1 || INSTALL_RUNTIME=0
     if [[ -z "${CREATE_PROJECT}" ]] && ask_yes_no "Create a starter ORust project after installation?" n; then
         read -r -u "${PROMPT_FD}" -p "[orust] Project directory [hello-orust] " CREATE_PROJECT || true
         CREATE_PROJECT="${CREATE_PROJECT:-hello-orust}"
@@ -142,14 +158,103 @@ fi
 
 command -v "${CARGO_COMMAND}" >/dev/null 2>&1 || fail "Cargo is still unavailable"
 
-if [[ "${INSTALL_CLI}" -eq 1 ]]; then
-    say "Installing orust-cli from ${ORUST_REPOSITORY} (${ORUST_REF})"
-    "${CARGO_COMMAND}" install --git "${ORUST_REPOSITORY}" --branch "${ORUST_REF}" --locked --force orust-cli
+prepare_workspace() {
+    command -v git >/dev/null 2>&1 || fail "git is required to install ORust from the public repository"
+    WORKSPACE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/orust-source.XXXXXX")"
+    say "Downloading ORust source from ${ORUST_REPOSITORY} (${ORUST_REF})"
+    git clone --depth 1 --branch "${ORUST_REF}" "${ORUST_REPOSITORY}" "${WORKSPACE_DIR}" >/dev/null
+    say "Building the ORust workspace"
+    say "This compiles the parser, emitter, lowering, diagnostics, runtime, and rustplain support used by the installed tools."
+    local packages=(
+        orust-cli
+        orust-lsp
+        orust-runtime
+        orust-syntax
+        orust-lower
+        orust-emit
+        orust-diag
+        rustplain-cargo
+        rustplain-cli
+        rustplain-diag
+        rustplain-explain
+        rustplain-render
+    )
+    local package_args=()
+    local package
+    for package in "${packages[@]}"; do
+        package_args+=("-p" "${package}")
+    done
+    "${CARGO_COMMAND}" build --release --locked \
+        --manifest-path "${WORKSPACE_DIR}/Cargo.toml" "${package_args[@]}"
+}
+
+install_workspace_binary() {
+    local name="$1"
+    local source="${WORKSPACE_DIR}/target/release/${name}"
+    local destination="${CARGO_BIN_DIR}/${name}"
+    if [[ ! -f "${source}" && -f "${source}.exe" ]]; then
+        source="${source}.exe"
+        destination="${destination}.exe"
+    fi
+    [[ -f "${source}" ]] || fail "the workspace did not produce ${name}"
+    mkdir -p "${CARGO_BIN_DIR}"
+    cp "${source}" "${destination}"
+    chmod +x "${destination}" 2>/dev/null || true
+    say "Installed ${name} to ${destination}"
+}
+
+if [[ "${INSTALL_CLI}" -eq 1 || "${INSTALL_LSP}" -eq 1 ]]; then
+    prepare_workspace
+    if [[ "${INSTALL_CLI}" -eq 1 ]]; then
+        if [[ "${UPDATE_ONLY}" -eq 1 ]]; then
+            say "Updated orust-cli and its compiler libraries"
+        else
+            say "Installing orust-cli and its compiler libraries"
+        fi
+        install_workspace_binary orust
+        say "Installing rustplain support for readable Rust diagnostics"
+        install_workspace_binary rustplain
+        install_workspace_binary cargo-plain
+    fi
+    if [[ "${INSTALL_LSP}" -eq 1 ]]; then
+        if [[ "${UPDATE_ONLY}" -eq 1 ]]; then
+            say "Updated orust-lsp and its language-service libraries"
+        else
+            say "Installing orust-lsp and its language-service libraries"
+        fi
+        install_workspace_binary orust-lsp
+    fi
 fi
 
-if [[ "${INSTALL_LSP}" -eq 1 ]]; then
-    say "Installing orust-lsp from ${ORUST_REPOSITORY} (${ORUST_REF})"
-    "${CARGO_COMMAND}" install --git "${ORUST_REPOSITORY}" --branch "${ORUST_REF}" --locked --force orust-lsp
+prepare_runtime() {
+    local temp_dir
+    temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/orust-runtime.XXXXXX")"
+    trap 'rm -rf "${temp_dir}"' EXIT
+    mkdir -p "${temp_dir}/src"
+    printf '%s\n' \
+        '[package]' \
+        'name = "orust-runtime-bootstrap"' \
+        'version = "0.0.0"' \
+        'edition = "2021"' \
+        '' \
+        '[dependencies]' \
+        'orust-runtime = "0.1"' \
+        > "${temp_dir}/Cargo.toml"
+    printf '%s\n' 'fn main() {}' > "${temp_dir}/src/main.rs"
+    if [[ "${UPDATE_ONLY}" -eq 1 ]]; then
+        say "Checking for updates to orust-runtime"
+        "${CARGO_COMMAND}" update --manifest-path "${temp_dir}/Cargo.toml"
+    else
+        say "Preparing orust-runtime for generated projects"
+    fi
+    "${CARGO_COMMAND}" fetch --manifest-path "${temp_dir}/Cargo.toml"
+    rm -rf "${temp_dir}"
+    trap - EXIT
+    say "orust-runtime is ready; new projects will include it automatically"
+}
+
+if [[ "${INSTALL_RUNTIME}" -eq 1 ]]; then
+    prepare_runtime
 fi
 
 if command -v rust-analyzer >/dev/null 2>&1; then
@@ -175,6 +280,10 @@ if [[ -n "${CREATE_PROJECT}" ]]; then
     say "Creating starter project: ${CREATE_PROJECT}"
     orust new "${CREATE_PROJECT}"
     say "Project created. Run: cd ${CREATE_PROJECT} && orust run"
+fi
+
+if [[ -n "${WORKSPACE_DIR}" ]]; then
+    rm -rf "${WORKSPACE_DIR}"
 fi
 
 say "Installation complete."

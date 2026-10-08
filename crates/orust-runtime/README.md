@@ -1,7 +1,7 @@
 # `orust-runtime`
 
 `orust-runtime` is the Rust runtime library used by programs generated from
-[ORust](https://github.com/Jesse-Dan/Orust). ORust is an object-oriented front
+[ORust](https://github.com/Whales-Group/Orust). ORust is an object-oriented front
 end for Rust: the compiler emits ordinary Rust, while this crate supplies
 shared helpers for async execution, tasks, channels, diagnostics, collections,
 I/O, environment access, and math.
@@ -53,9 +53,9 @@ The crate currently enables Tokio's `macros`, `rt-multi-thread`, `time`, and
 | `1.seconds` / `100.millis` | `seconds(1)` / `millis(100)` |
 | standard helpers | `std_math`, `std_env`, and `std_io` |
 
-See the [runtime architecture guide](https://github.com/Jesse-Dan/Orust/blob/main/docs/runtime.md),
-[async guide](https://github.com/Jesse-Dan/Orust/blob/main/docs/async.md),
-and [modules guide](https://github.com/Jesse-Dan/Orust/blob/main/docs/modules.md).
+See the [runtime architecture guide](https://github.com/Whales-Group/Orust/blob/main/docs/runtime.md),
+[async guide](https://github.com/Whales-Group/Orust/blob/main/docs/async.md),
+and [modules guide](https://github.com/Whales-Group/Orust/blob/main/docs/modules.md).
 
 ## Tasks and async execution
 
@@ -76,7 +76,7 @@ async fn run() -> Result<i64, Error> {
 Spawning requires the future and captured values to satisfy `Send + 'static`.
 The runtime deliberately preserves this Tokio requirement. Calling an async
 function creates a lazy future; execution starts only when it is awaited or
-spawned. See the [async semantics documentation](https://github.com/Jesse-Dan/Orust/blob/main/docs/async.md).
+spawned. See the [async semantics documentation](https://github.com/Whales-Group/Orust/blob/main/docs/async.md).
 
 Time helpers are available to generated and handwritten Rust:
 
@@ -140,8 +140,8 @@ Known failures map to stable ORust codes:
 - `OR0099` — unknown runtime panic
 
 Set `ORUST_BACKTRACE=1` to include the Rust panic location. See the
-[diagnostics guide](https://github.com/Jesse-Dan/Orust/blob/main/docs/diagnostics.md)
-and [error-code registry](https://github.com/Jesse-Dan/Orust/blob/main/docs/error-codes.md).
+[diagnostics guide](https://github.com/Whales-Group/Orust/blob/main/docs/diagnostics.md)
+and [error-code registry](https://github.com/Whales-Group/Orust/blob/main/docs/error-codes.md).
 
 ## Safe indexing and options
 
@@ -204,7 +204,7 @@ async void main() {
 External crates such as `serde_json` belong in the project's `Cargo.toml` or
 `orust.toml`; Cargo resolves those dependencies. Use explicit Rust imports,
 `@rustImport`, `@rustType`, or passthrough blocks at the boundary. See the
-[Rust/ORust interoperability guide](https://github.com/Jesse-Dan/Orust/blob/main/docs/rust-orust-interop-tags.md).
+[Rust/ORust interoperability guide](https://github.com/Whales-Group/Orust/blob/main/docs/rust-orust-interop-tags.md).
 
 ## Versioning and packaging
 
@@ -218,9 +218,9 @@ handles downloading and compiling the matching runtime version automatically.
 
 ## Documentation map
 
-- [Runtime architecture](https://github.com/Jesse-Dan/Orust/blob/main/docs/runtime.md)
-- [Async and Tokio semantics](https://github.com/Jesse-Dan/Orust/blob/main/docs/async.md)
-- [Ownership and cleanup](https://github.com/Jesse-Dan/Orust/blob/main/docs/drop.md)
-- [Modules and Cargo dependencies](https://github.com/Jesse-Dan/Orust/blob/main/docs/modules.md)
-- [Rust/ORust interoperability](https://github.com/Jesse-Dan/Orust/blob/main/docs/rust-orust-interop-tags.md)
-- [Diagnostics and error codes](https://github.com/Jesse-Dan/Orust/blob/main/docs/diagnostics.md)
+- [Runtime architecture](https://github.com/Whales-Group/Orust/blob/main/docs/runtime.md)
+- [Async and Tokio semantics](https://github.com/Whales-Group/Orust/blob/main/docs/async.md)
+- [Ownership and cleanup](https://github.com/Whales-Group/Orust/blob/main/docs/drop.md)
+- [Modules and Cargo dependencies](https://github.com/Whales-Group/Orust/blob/main/docs/modules.md)
+- [Rust/ORust interoperability](https://github.com/Whales-Group/Orust/blob/main/docs/rust-orust-interop-tags.md)
+- [Diagnostics and error codes](https://github.com/Whales-Group/Orust/blob/main/docs/diagnostics.md)

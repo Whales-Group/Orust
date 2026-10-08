@@ -29,17 +29,27 @@ Install Rust first if it is not already installed:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-Then install the ORust CLI and language server from the public repository:
+Then install the ORust CLI, runtime, and optional language server from the
+public repository:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh | bash
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh | bash
 ```
 
-The installer detects your platform, builds `orust` and `orust-lsp` locally,
-places them in Cargo's binary directory, checks for Rust Analyzer, and offers
-to install missing Rust components. It supports macOS and Linux directly, and
-Windows through Git Bash or WSL.
+The installer asks which user-facing components to install:
+
+- `orust` — the compiler and project CLI
+- `orust-runtime` — prepared in Cargo's registry cache for generated projects
+- `orust-lsp` — optional editor support
+
+The parser, emitter, lowering, diagnostics, runtime, and rustplain support
+crates are built under the hood. Users do not need to install those internal
+crates separately. The installer detects your platform, builds the complete
+workspace from the public repository, installs `orust`, `orust-lsp`, and the
+`rustplain` diagnostic helpers, prepares the published runtime crate, and
+checks for Rust Analyzer. It supports macOS and Linux directly, and Windows
+through Git Bash or WSL.
 
 Verify the installation:
 
@@ -52,8 +62,27 @@ The installer supports unattended installation:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --all --non-interactive
+```
+
+To update the selected ORust tools later, run the same public script with
+`--update`. It checks the repository, reports the workspace components being
+rebuilt, updates the CLI/LSP and rustplain binaries, and refreshes the runtime
+dependency:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  | bash -s -- --update --non-interactive
+```
+
+For a normal interactive update, omit `--non-interactive` and choose the
+components to update. Project dependencies are updated separately with:
+
+```sh
+orust fetch
+orust update
 ```
 
 When `orust-cli` and `orust-lsp` are available on crates.io, they can also be
@@ -99,8 +128,10 @@ orust run
 ```
 
 ORust generates Rust under `target/rust/`. Cargo compiles that Rust and runs
-the resulting binary. The generated project includes `orust-runtime`
-automatically; users do not install the runtime as a global command.
+the resulting binary. New projects contain a standard `Cargo.toml` with
+`orust-runtime = "0.1"`; Cargo fetches the runtime automatically when the
+project is first built. The runtime is a project dependency, not a global
+command.
 
 ## Language examples
 
@@ -159,8 +190,8 @@ More examples are in [`examples/`](examples).
 
 ## Rust interoperability
 
-ORust and Rust can be used in the same project. Declare dependencies in
-`Cargo.toml` or `orust.toml`; Cargo resolves them normally.
+ORust and Rust can be used in the same project. Declare dependencies in the
+project's standard `Cargo.toml`; Cargo resolves them normally.
 
 ```toml
 [dependencies]
@@ -196,12 +227,16 @@ orust lint                       # report source lints
 orust format                     # format an ORust file
 orust format --dry-run           # preview formatting changes
 orust emit                       # print generated Rust
+orust add serde_json@1            # add a Cargo dependency
+orust fetch                       # download declared dependencies
+orust update                      # update the Cargo lockfile
 orust explain OR0005             # explain a diagnostic code
 ```
 
-The CLI accepts a file, project directory, `orust.toml`, or `Cargo.toml` as
-the input context. From a project root, `orust run` uses the configured entry
-file and generated Cargo project.
+The CLI accepts a file, project directory, or `Cargo.toml` as the input
+context. From a project root, `orust run` uses `src/main.or` (or `src/main.rs`)
+and the generated Cargo project. Existing `orust.toml` projects remain
+readable for migration, but new projects use Cargo's standard manifest.
 
 ## VS Code
 
@@ -250,9 +285,9 @@ but embedded Rust completion and diagnostics will be limited.
 
 ### Cargo dependency errors
 
-Run the command from the project directory and check `Cargo.toml` or
-`orust.toml`. Third-party crates must be declared there before they can be
-used by Rust blocks or generated Rust.
+Run the command from the project directory and check `Cargo.toml`. Third-party
+crates must be declared there before they can be used by Rust blocks or
+generated Rust. Use `orust add crate@version`, then `orust fetch`.
 
 ## License
 
