@@ -35,9 +35,14 @@ cd my-project
 orust run
 ```
 
-The generated `Cargo.toml` includes `orust-runtime`, so Cargo downloads the
-runtime package during the first build. A direct Rust user can add the library
-with `cargo add orust-runtime`.
+The generated `Cargo.toml` includes the published `orust-runtime` crate, so
+Cargo downloads the runtime during the first build. A direct Rust user can use
+the same crates.io dependency:
+
+```toml
+[dependencies]
+orust-runtime = "0.1.2"
+```
 
 ## Public API areas
 

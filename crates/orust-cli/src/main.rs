@@ -367,6 +367,23 @@ fn runtime_crate_path() -> Result<PathBuf, String> {
     fs::canonicalize(runtime).map_err(|error| error.to_string())
 }
 
+fn starter_manifest(library: bool, workspace: bool) -> String {
+    let target = if library {
+        "[lib]\npath = \"target/rust/src/lib.rs\""
+    } else {
+        "[[bin]]\nname = \"orust-project\"\npath = \"target/rust/src/main.rs\""
+    };
+    let workspace_header = if workspace {
+        "[workspace]\nmembers = [\".\"]\n\n"
+    } else {
+        ""
+    };
+    format!(
+        "{workspace_header}[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target}\n\n[dependencies]\n{}\n",
+        "orust-runtime = \"0.1.2\""
+    )
+}
+
 fn module_name(path: &std::path::Path) -> String {
     let raw = path.file_stem().unwrap().to_string_lossy();
     let mut name = String::new();
@@ -1997,19 +2014,7 @@ fn main() -> ExitCode {
         } else {
             "import 'rust:./counter.rs';\n\n@rustImport(\"crate::counter::count_to\") void countTo(int start, int end);\n\nvoid main() {\n  countTo(1, 30);\n  print(\"Hello, world!\");\n}\n"
         };
-        let manifest = if workspace {
-            if library {
-                "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"target/rust/src/lib.rs\"\n\n[dependencies]\norust-runtime = \"0.1\"\n"
-            } else {
-                "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"orust-project\"\npath = \"target/rust/src/main.rs\"\n\n[dependencies]\norust-runtime = \"0.1\"\n"
-            }
-        } else {
-            if library {
-                "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\npath = \"target/rust/src/lib.rs\"\n\n[dependencies]\norust-runtime = \"0.1\"\n"
-            } else {
-                "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[[bin]]\nname = \"orust-project\"\npath = \"target/rust/src/main.rs\"\n\n[dependencies]\norust-runtime = \"0.1\"\n"
-            }
-        };
+        let manifest = starter_manifest(library, workspace);
         let result = fs::create_dir_all(directory.join("src"))
             .and_then(|_| fs::create_dir_all(directory.join("tests")))
             .and_then(|_| fs::write(directory.join("Cargo.toml"), manifest))
@@ -2461,7 +2466,7 @@ mod tests {
     use super::{
         author_lines, cargo_package_name, cargo_patch_sections, cargo_section_lines,
         cargo_target_dependency_sections, explain_code, exported_item_names, render_doc_site,
-        todo_lines,
+        starter_manifest, todo_lines,
     };
     use std::{collections::HashMap, path::PathBuf};
 
@@ -2486,6 +2491,13 @@ mod tests {
     fn generated_smoke_test_template_is_parseable() {
         let source = "test \"smoke\" {\n  expect(true);\n}\n";
         assert!(orust_syntax::parse(source).is_ok());
+    }
+
+    #[test]
+    fn new_projects_use_the_published_runtime() {
+        let manifest = starter_manifest(false, false);
+        assert!(manifest.contains("[[bin]]"));
+        assert!(manifest.contains("orust-runtime = \"0.1.2\""));
     }
 
     #[test]

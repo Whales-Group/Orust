@@ -76,6 +76,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - name: Verify release tag matches workspace version
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          actual="$(cargo pkgid -p orust-cli | sed -E 's/.*@//')"
+          test "${actual}" = "${expected}"
       - name: Build release binaries
         run: cargo build --release --target ${{ matrix.target }} -p orust-cli -p orust-lsp
       - name: Package release archive

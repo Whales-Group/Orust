@@ -17,6 +17,8 @@ UPDATE_ONLY=0
 UNINSTALL_ONLY=0
 WORKSPACE_DIR=""
 CARGO_BIN_DIR="${CARGO_HOME:-${HOME}/.cargo}/bin"
+ORUST_RETRIES="${ORUST_RETRIES:-3}"
+ORUST_RETRY_DELAY="${ORUST_RETRY_DELAY:-2}"
 
 say() { printf '%s\n' "[orust] $*"; }
 warn() { printf '%s\n' "[orust] warning: $*" >&2; }
@@ -43,9 +45,11 @@ Options:
 Environment:
   ORUST_REF              Git branch or tag; default: main
   ORUST_REPOSITORY       Git repository URL
+  ORUST_RETRIES          Workspace build retry count; default: 3
+  ORUST_RETRY_DELAY      Seconds between build retries; default: 2
 
-The runtime is a library, not an executable. It is made available through
-Cargo's registry cache and is added automatically to new ORust projects.
+The runtime is a library, not an executable. It is fetched from crates.io and
+added automatically to new ORust projects.
 USAGE
 }
 
@@ -230,8 +234,18 @@ prepare_workspace() {
     done
     (
         cd "${WORKSPACE_DIR}"
-        "${CARGO_COMMAND}" build --release --locked \
-            --manifest-path Cargo.toml "${package_args[@]}"
+        for ((attempt = 1; attempt <= ORUST_RETRIES; attempt++)); do
+            if "${CARGO_COMMAND}" build --release --locked \
+                --manifest-path Cargo.toml "${package_args[@]}"; then
+                return 0
+            fi
+            if [[ "${attempt}" -lt "${ORUST_RETRIES}" ]]; then
+                local delay=$((ORUST_RETRY_DELAY * attempt))
+                say "Workspace build could not finish; retrying in ${delay}s"
+                sleep "${delay}"
+            fi
+        done
+        fail "the public ORust workspace could not be built after ${ORUST_RETRIES} attempts"
     )
 }
 
@@ -248,6 +262,74 @@ install_workspace_binary() {
     cp "${source}" "${destination}"
     chmod +x "${destination}" 2>/dev/null || true
     say "Installed ${name} to ${destination}"
+}
+
+prepare_runtime() {
+    local temp_dir
+    temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/orust-runtime.XXXXXX")"
+    trap 'rm -rf "${temp_dir}"' EXIT
+    mkdir -p "${temp_dir}/src"
+    printf '%s\n' \
+        '[package]' \
+        'name = "orust-runtime-bootstrap"' \
+        'version = "0.0.0"' \
+        'edition = "2021"' \
+        '' \
+        '[dependencies]' \
+        'orust-runtime = "0.1.2"' \
+        > "${temp_dir}/Cargo.toml"
+    printf '%s\n' 'fn main() {}' > "${temp_dir}/src/main.rs"
+    say "Preparing the published orust-runtime crate"
+
+    runtime_fetch() {
+        local mode="$1"
+        if [[ "${mode}" == "offline" ]]; then
+            (
+                cd "${temp_dir}"
+                CARGO_NET_RETRY=0 "${CARGO_COMMAND}" fetch --offline --manifest-path Cargo.toml
+            )
+        else
+            if [[ "${UPDATE_ONLY}" -eq 1 ]]; then
+                (
+                    cd "${temp_dir}"
+                    CARGO_NET_RETRY=0 "${CARGO_COMMAND}" update --manifest-path Cargo.toml
+                ) || return 1
+            fi
+            (
+                cd "${temp_dir}"
+                CARGO_NET_RETRY=0 "${CARGO_COMMAND}" fetch --manifest-path Cargo.toml
+            )
+        fi
+    }
+
+    if runtime_fetch offline; then
+        say "orust-runtime is already available locally"
+        rm -rf "${temp_dir}"
+        trap - EXIT
+        return 0
+    fi
+
+    local attempt
+    local delay
+    for ((attempt = 1; attempt <= ORUST_RETRIES; attempt++)); do
+        say "Fetching orust-runtime from crates.io (attempt ${attempt}/${ORUST_RETRIES})"
+        if runtime_fetch online; then
+            rm -rf "${temp_dir}"
+            trap - EXIT
+            say "orust-runtime is ready for generated projects"
+            return 0
+        fi
+        if [[ "${attempt}" -lt "${ORUST_RETRIES}" ]]; then
+            delay=$((ORUST_RETRY_DELAY * attempt))
+            say "Network unavailable; retrying in ${delay}s"
+            sleep "${delay}"
+        fi
+    done
+
+    warn "Could not reach crates.io for orust-runtime after ${ORUST_RETRIES} attempts"
+    warn "The CLI and LSP are installed; run the update command again when the network is available"
+    rm -rf "${temp_dir}"
+    trap - EXIT
 }
 
 if [[ "${INSTALL_CLI}" -eq 1 || "${INSTALL_LSP}" -eq 1 ]]; then
@@ -272,36 +354,6 @@ if [[ "${INSTALL_CLI}" -eq 1 || "${INSTALL_LSP}" -eq 1 ]]; then
         install_workspace_binary orust-lsp
     fi
 fi
-
-prepare_runtime() {
-    local temp_dir
-    temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/orust-runtime.XXXXXX")"
-    trap 'rm -rf "${temp_dir}"' EXIT
-    mkdir -p "${temp_dir}/src"
-    printf '%s\n' \
-        '[package]' \
-        'name = "orust-runtime-bootstrap"' \
-        'version = "0.0.0"' \
-        'edition = "2021"' \
-        '' \
-        '[dependencies]' \
-        'orust-runtime = "0.1"' \
-        > "${temp_dir}/Cargo.toml"
-    printf '%s\n' 'fn main() {}' > "${temp_dir}/src/main.rs"
-    if [[ "${UPDATE_ONLY}" -eq 1 ]]; then
-        say "Checking for updates to orust-runtime"
-        "${CARGO_COMMAND}" update --manifest-path "${temp_dir}/Cargo.toml"
-    else
-        say "Preparing orust-runtime for generated projects"
-    fi
-    (
-        cd "${temp_dir}"
-        "${CARGO_COMMAND}" fetch --manifest-path Cargo.toml
-    )
-    rm -rf "${temp_dir}"
-    trap - EXIT
-    say "orust-runtime is ready; new projects will include it automatically"
-}
 
 if [[ "${INSTALL_RUNTIME}" -eq 1 ]]; then
     prepare_runtime

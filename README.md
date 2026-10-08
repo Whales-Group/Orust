@@ -30,7 +30,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 The installer asks which user-facing components to install:
 
 - `orust` — the compiler and project CLI
-- `orust-runtime` — prepared in Cargo's registry cache for generated projects
+- `orust-runtime` — published on crates.io and added automatically to generated projects
 - `orust-lsp` — optional editor support
 
 The parser, emitter, lowering, diagnostics, runtime, and rustplain support
@@ -94,6 +94,11 @@ curl --proto '=https' --tlsv1.2 -sSf \
   | bash -s -- --update --non-interactive
 ```
 
+If a dependency download is temporarily unavailable, the installer retries the
+public workspace build three times and leaves existing installed binaries
+untouched if the build cannot finish. Run the update command again later.
+Retry behavior can be adjusted with `ORUST_RETRIES` and `ORUST_RETRY_DELAY`.
+
 ### Uninstall — interactive
 
 This asks which installed components to remove:
@@ -138,6 +143,26 @@ tools does not delete it from existing projects. Remove `orust-runtime` from a
 project's `Cargo.toml` only when that project no longer uses generated ORust
 code.
 
+### Prepare a release
+
+All workspace crates use the shared version in the root `Cargo.toml`. Use the
+release script to bump that version and update internal crate links:
+
+```sh
+scripts/release.sh patch
+```
+
+To check the workspace, commit the version change, create the deployment tag,
+and push both the commit and tag:
+
+```sh
+scripts/release.sh patch --commit --tag --push
+```
+
+The `vX.Y.Z` tag starts the GitHub release workflow, which builds the platform
+archives. Use `minor`, `major`, or an explicit version such as `1.0.0` instead
+of `patch` when appropriate.
+
 For a normal interactive update, omit `--non-interactive` and choose the
 components to update. Project dependencies are updated separately with:
 
@@ -146,13 +171,9 @@ orust fetch
 orust update
 ```
 
-When `orust-cli` and `orust-lsp` are available on crates.io, they can also be
-installed with Cargo:
-
-```sh
-cargo install orust-cli
-cargo install orust-lsp
-```
+The supported installation path is the public installer above. It builds the
+CLI, LSP, and internal compiler packages from GitHub, while the generated
+projects use the published `orust-runtime` crate.
 
 ## Quick start
 
@@ -190,8 +211,8 @@ orust run
 
 ORust generates Rust under `target/rust/`. Cargo compiles that Rust and runs
 the resulting binary. New projects contain a standard `Cargo.toml` with
-`orust-runtime = "0.1"`; Cargo fetches the runtime automatically when the
-project is first built. The runtime is a project dependency, not a global
+`orust-runtime = "0.1.2"`; Cargo fetches the published runtime automatically when
+the project is first built. The runtime is a project dependency, not a global
 command.
 
 ## Language examples
