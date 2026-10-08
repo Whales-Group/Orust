@@ -1,0 +1,14 @@
+[package]
+name = "rustplain-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "rustplain"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+rustplain-diag = { path = "../rustplain-diag" }
+rustplain-render = { path = "../rustplain-render" }
+rustplain-cargo = { path = "../rustplain-cargo" }

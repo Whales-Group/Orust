@@ -1,0 +1,5 @@
+class Values {
+  bool operator_eq(lend Values other) { return true; }
+  bool operator_lt(lend Values other) { return false; }
+  lend int operator_index(int index) { rust { todo!() } }
+}

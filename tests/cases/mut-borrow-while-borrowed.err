@@ -1,0 +1,7 @@
+error: you changed `a` while it was still being looked at.
+ --> main.or:1:1
+  |
+1 | change(a);
+  |
+help: use `lend`, `lend mut`, or `copy` to make ownership explicit
+

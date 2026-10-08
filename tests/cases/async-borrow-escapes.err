@@ -1,0 +1,6 @@
+error: a borrowed value is escaping into async work that may outlive it.
+ --> main.or:1:1
+  |
+1 | lend value;
+  |
+help: make the async operation finish before the borrowed value leaves scope, or use `copy`/an explicitly shared class

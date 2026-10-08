@@ -1,0 +1,6 @@
+error: this match does not handle every enum case.
+ --> main.or:1:1
+  |
+1 | switch(value) { case One: print(1); }
+  |
+help: add the missing enum pattern to `switch`, or include a deliberate wildcard case

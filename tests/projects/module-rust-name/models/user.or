@@ -1,0 +1,3 @@
+export @rustName("ExternalUser") class User {
+  int get() { return 7; }
+}

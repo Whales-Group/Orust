@@ -1,0 +1,14 @@
+[package]
+name = "orust-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "orust"
+path = "src/main.rs"
+
+[dependencies]
+orust-syntax = { path = "../orust-syntax" }
+orust-emit = { path = "../orust-emit" }
+orust-diag = { path = "../orust-diag" }
+orust-runtime = { path = "../orust-runtime" }

@@ -1,0 +1,9 @@
+rust use serde_json::json;
+export @rustImport("serde_json::Value") type JsonValue;
+
+void main() {
+    JsonValue value = rust json!({ "source": "Cargo.toml" });
+    rust {
+        println!("{}", value["source"]);
+    }
+}

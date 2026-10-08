@@ -1,0 +1,8 @@
+[package]
+name = "orust-library"
+version = "0.1.0"
+entry = "src/lib.or"
+
+[features]
+default = ["interop"]
+interop = []

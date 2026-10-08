@@ -1,0 +1,8 @@
+void bytePosition(String text) {
+  print(text.length);
+  var prefix = text[0..1];
+}
+
+void main() {
+  bytePosition("ORust");
+}

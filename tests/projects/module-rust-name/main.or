@@ -1,0 +1,6 @@
+import 'facade.or' show User;
+
+void main() {
+  var user = new User();
+  print(user.get());
+}

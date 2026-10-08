@@ -1,0 +1,7 @@
+error: this reference needs a lifetime; try explicit `lend(a)` syntax.
+ --> main.or:1:1
+  |
+1 | lend T f(lend T a);
+  |
+help: use `lend(a)` when the lifetime relationship is ambiguous
+

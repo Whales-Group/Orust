@@ -1,0 +1,5 @@
+import 'std:io' show File;
+
+void main() {
+  print(File.exists("Cargo.toml"));
+}

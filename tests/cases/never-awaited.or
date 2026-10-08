@@ -1,0 +1,7 @@
+Future<int> work() async {
+  return 1;
+}
+
+async void main() {
+  work();
+}

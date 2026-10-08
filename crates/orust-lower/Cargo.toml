@@ -1,0 +1,8 @@
+[package]
+name = "orust-lower"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+orust-syntax = { path = "../orust-syntax" }
+

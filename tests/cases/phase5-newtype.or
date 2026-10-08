@@ -1,0 +1,9 @@
+type UserId(int);
+
+int raw(UserId id) {
+  return id.value;
+}
+
+void main() {
+  print(raw(new UserId(7)));
+}

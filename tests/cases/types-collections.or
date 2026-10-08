@@ -1,0 +1,12 @@
+class Values {
+  double ratio = 1.5;
+  bool enabled = true;
+  String label = "values";
+  List<int> numbers = [1, 2, 3];
+}
+
+void main() {
+  var values = new Values();
+  print(values.label);
+  print(values.numbers);
+}

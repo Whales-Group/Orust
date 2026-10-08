@@ -1,0 +1,31 @@
+class Node {
+  int value;
+  Node? next;
+
+  Node(this.value, this.next);
+}
+
+Node? push(Node? head, int value) {
+  return new Node(value, head);
+}
+
+Node? pop(Node? head) {
+  if (head case var current?) {
+    return current.next;
+  }
+  return null;
+}
+
+void main() {
+  Node? head = null;
+  head = push(head, 1);
+  head = push(head, 2);
+  head = push(head, 3);
+  if (lend head case var current?) {
+    print(current.value);
+  }
+  head = pop(head);
+  if (lend head case var current?) {
+    print(current.value);
+  }
+}

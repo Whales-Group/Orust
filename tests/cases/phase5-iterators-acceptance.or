@@ -1,0 +1,30 @@
+class Countdown implements Iterator<int> {
+  int current;
+
+  Countdown(this.current);
+
+  int? next() {
+    if (current == 0) {
+      return null;
+    }
+    var value = current;
+    current = current - 1;
+    return value;
+  }
+}
+
+void main() {
+  var countdown = new Countdown(3);
+  int? first = countdown.next();
+  int? second = countdown.next();
+  int? third = countdown.next();
+  int? done = countdown.next();
+  print(first);
+  print(second);
+  print(third);
+  print(done);
+
+  var values = [1, 2, 3];
+  var doubled = values.where(|_| true).map(|value| value).toList();
+  print(doubled.length);
+}

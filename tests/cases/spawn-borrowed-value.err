@@ -1,0 +1,7 @@
+error: this spawned task may outlive the values it borrowed.
+ --> main.or:1:1
+  |
+1 | spawn(lend value);
+  |
+help: use `spawn(copy value)` when the task must own its data
+help: use `lend value` only when the task finishes before the borrowed value does

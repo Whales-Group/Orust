@@ -1,0 +1,26 @@
+class Tree {
+  int value;
+  Tree? left;
+  Tree? right;
+
+  Tree(this.value, this.left, this.right);
+}
+
+void inorder(Tree tree) {
+  print(tree.value);
+  if (tree.left case var left?) {
+    inorder(left);
+  }
+  if (tree.right case var right?) {
+    inorder(right);
+  }
+}
+
+void main() {
+  var tree = new Tree(
+    2,
+    new Tree(1, null, null),
+    new Tree(3, null, null)
+  );
+  inorder(tree);
+}

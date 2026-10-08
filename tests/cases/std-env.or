@@ -1,0 +1,5 @@
+import 'std:env' show cwd;
+
+void main() {
+  print(cwd());
+}

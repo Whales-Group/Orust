@@ -1,0 +1,7 @@
+import 'models/user.or' show make;
+
+void main() {
+  var point = make();
+  print(point.x);
+  print(point.label);
+}

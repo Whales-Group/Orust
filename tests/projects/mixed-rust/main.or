@@ -1,0 +1,9 @@
+import 'rust:./helpers.rs';
+import 'rust:./consumer.rs';
+
+@rustImport("crate::helpers::shout") String shoutValue(String value);
+
+void main() {
+  print(shoutValue("hello"));
+  var user = consumer.make_user();
+}

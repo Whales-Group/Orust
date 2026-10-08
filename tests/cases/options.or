@@ -1,0 +1,6 @@
+String? choose(String? value) { return value ?? "fallback"; }
+
+void main() {
+  var value = null;
+  print(choose(value));
+}

@@ -1,0 +1,11 @@
+class Node {
+  int value;
+  Node? next;
+  Node(this.value, this.next);
+}
+
+void main() {
+  var tail = new Node(2, null);
+  var head = new Node(1, tail);
+  print(head.value);
+}

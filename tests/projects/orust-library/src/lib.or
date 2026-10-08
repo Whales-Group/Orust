@@ -1,0 +1,5 @@
+export 'api.or' show User;
+
+export String greet(String name) {
+    return name;
+}

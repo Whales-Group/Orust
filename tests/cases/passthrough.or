@@ -1,0 +1,3 @@
+void main() {
+  rust { let value: i32 = 7; println!("{}", value); }
+}

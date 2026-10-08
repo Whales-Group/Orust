@@ -1,0 +1,6 @@
+error: `a` does not have the method this generic code requested.
+ --> main.or:1:1
+  |
+1 | value.missing();
+  |
+help: add the method through a trait bound, or use a concrete type with that method

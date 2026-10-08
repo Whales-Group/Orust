@@ -1,0 +1,11 @@
+class Counter {
+  int count = 0;
+  void inc() { count = count + 1; }
+  int get() { return count; }
+}
+
+void main() {
+  var counter = new Counter();
+  counter.inc();
+  print(counter.get());
+}

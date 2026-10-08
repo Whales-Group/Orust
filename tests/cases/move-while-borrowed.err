@@ -1,0 +1,7 @@
+error: tried to give away `a` while something was still looking at it.
+ --> main.or:1:1
+  |
+1 | move(a);
+  |
+help: use `lend`, `lend mut`, or `copy` to make ownership explicit
+

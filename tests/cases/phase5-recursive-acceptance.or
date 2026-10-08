@@ -1,0 +1,18 @@
+enum Expr {
+  Num(int value),
+  Add(Expr left, Expr right),
+  Mul(Expr left, Expr right),
+}
+
+int evaluate(Expr expression) {
+  switch (expression) {
+    case Num(value): { return value; }
+    case Add(left, right): { return evaluate(left) + evaluate(right); }
+    case Mul(left, right): { return evaluate(left) * evaluate(right); }
+  }
+}
+
+void main() {
+  var expression = new Expr.Add(new Expr.Num(2), new Expr.Mul(new Expr.Num(3), new Expr.Num(4)));
+  print(evaluate(expression));
+}

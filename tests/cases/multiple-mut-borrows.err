@@ -1,0 +1,7 @@
+error: two things are trying to edit `a` at once. Only one editor at a time.
+ --> main.or:1:1
+  |
+1 | edit(a);
+  |
+help: use `lend`, `lend mut`, or `copy` to make ownership explicit
+

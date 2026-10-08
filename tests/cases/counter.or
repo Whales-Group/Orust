@@ -1,0 +1,16 @@
+class Counter {
+  int count = 0;
+  void inc() { count = count + 1; }
+  int get() { return count; }
+}
+
+void show(lend Counter c) {
+  print(c.get());
+}
+
+void main() {
+  var a = new Counter();
+  a.inc();
+  show(lend a);
+  show(lend a);
+}

@@ -1,0 +1,5 @@
+import 'std:math' show sqrt;
+
+void main() {
+  print(sqrt(9.0));
+}

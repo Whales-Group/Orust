@@ -1,0 +1,6 @@
+import 'models/user.or';
+
+void main() {
+  var user = new User();
+  print(user.get());
+}

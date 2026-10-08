@@ -1,0 +1,7 @@
+[package]
+name = "rustplain-explain"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rustplain-diag = { path = "../rustplain-diag" }

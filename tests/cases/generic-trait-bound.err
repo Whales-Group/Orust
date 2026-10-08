@@ -1,0 +1,6 @@
+error: `a` is missing a trait bound required by this generic operation.
+ --> main.or:1:1
+  |
+1 | use<T extends Display>(value);
+  |
+help: add an `extends Trait` bound to the generic parameter, or pass a type that implements the required trait

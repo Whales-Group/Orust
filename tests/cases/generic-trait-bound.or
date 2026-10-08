@@ -1,0 +1,1 @@
+use<T extends Display>(value);

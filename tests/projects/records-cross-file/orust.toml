@@ -1,0 +1,4 @@
+[package]
+name = "records-cross-file"
+version = "0.1.0"
+entry = "main.or"

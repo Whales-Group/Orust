@@ -1,0 +1,3 @@
+export @rustName("ExternalUser") class User {
+    String label() { return "ORust"; }
+}

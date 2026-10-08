@@ -1,0 +1,7 @@
+error: this spawned task uses a value that cannot be sent safely between threads.
+ --> main.or:1:1
+  |
+1 | spawn(value);
+  |
+help: spawned work must be `Send`; use an explicitly shared class backed by `Arc<tokio::sync::Mutex<...>>`
+help: keep non-Send values on the current task instead of passing them to `spawn`

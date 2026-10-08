@@ -1,0 +1,11 @@
+Future<int> delayedValue(int value) async {
+  await Future.delayed(1.millis);
+  return value;
+}
+
+async void main() {
+  var first = await delayedValue(1);
+  var second = await delayedValue(2);
+  print(first);
+  print(second);
+}

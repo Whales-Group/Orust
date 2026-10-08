@@ -1,0 +1,4 @@
+/vscode-orust
+/target
+/crates/**/target
+/tests/**/target

@@ -1,0 +1,45 @@
+import 'std:math' show sqrt;
+
+class Reader {
+    String text;
+    Reader(this.text = "hello");
+    factory Reader.from(String text) {
+        return new Reader(text);
+    }
+}
+
+error Missing { String path }
+error ParseError {
+    Missing(String path) => "missing";
+    Invalid(String path) => "invalid";
+}
+
+String load(String path) throws Missing {
+    if (path == "") {
+        throw new Missing(path);
+    }
+    return path;
+}
+
+String parse(String path) throws ParseError {
+    if (path == "") {
+        throw new ParseError.Missing(path);
+    }
+    return path;
+}
+
+void main() {
+    var reader = new Reader(text: "phase4");
+    double widened = 5;
+    String? absent = null;
+    var values = [1, 2, 3];
+    print(reader.text);
+    print(widened);
+    print(absent);
+    print(values[1]);
+    print(sqrt(9.0));
+}
+
+test "phase 4 syntax" {
+    expect(1 == 1);
+}

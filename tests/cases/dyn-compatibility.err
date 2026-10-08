@@ -1,0 +1,6 @@
+error: this interface cannot be used as a dynamic trait object.
+ --> main.or:1:1
+  |
+1 | var value = interface;
+  |
+help: make the interface dyn-compatible by removing `Self`-returning or generic methods, or use a concrete class

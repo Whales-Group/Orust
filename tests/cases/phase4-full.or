@@ -1,0 +1,51 @@
+import 'std:math' show sqrt;
+import 'std:io' show File;
+import 'std:env' show cwd;
+
+class Reader {
+    String text;
+
+    Reader(this.text = "default");
+
+    factory Reader.from(String text) {
+        return new Reader(text);
+    }
+}
+
+error Missing { String path }
+
+String load(String path) throws Missing {
+    if (path == "") {
+        throw new Missing(path);
+    }
+    return path;
+}
+
+int add(int left, int right) {
+    return left + right;
+}
+
+test "constructor defaults and named arguments" {
+    var defaultReader = new Reader();
+    var namedReader = new Reader(text: "named");
+    var factoryReader = new Reader.from("factory");
+    expect(defaultReader.text == "default");
+    expect(namedReader.text == "named");
+    expect(factoryReader.text == "factory");
+}
+
+test "numbers, indexing, and nullable output" {
+    double widened = 5;
+    var values = [1, 2, 3];
+    String? absent = null;
+    expect(widened == 5.0);
+    expect(values[1] == 2);
+    expect(absent == null);
+}
+
+test "typed errors and standard library" {
+    expect(add(2, 3) == 5);
+    expect(sqrt(9.0) == 3.0);
+    expect(File.exists("Cargo.toml"));
+    expect(cwd() != "");
+}

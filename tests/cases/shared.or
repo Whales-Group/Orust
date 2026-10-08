@@ -1,0 +1,9 @@
+shared class SharedCounter {
+  int count = 0;
+  void inc() { count = count + 1; }
+}
+
+void main() {
+  var counter = new SharedCounter();
+  counter.inc();
+}

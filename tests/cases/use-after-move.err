@@ -1,0 +1,9 @@
+error: `a` no longer has its Counter
+ --> main.or:1:1
+  |
+1 | var a = value;
+  |
+help: give it its own Counter: `copy a`
+help: let it look without owning: `lend a`
+help: share it explicitly with `shared class`
+

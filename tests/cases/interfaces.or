@@ -1,0 +1,10 @@
+interface Speak { String speak(); }
+
+class Dog implements Speak {
+  String speak() { return "woof"; }
+}
+
+void main() {
+  var dog = new Dog();
+  print(dog.speak());
+}

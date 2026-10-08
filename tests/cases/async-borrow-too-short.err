@@ -1,0 +1,6 @@
+error: `a` does not live long enough for this async work.
+ --> main.or:1:1
+  |
+1 | await a;
+  |
+help: make the async operation finish before the borrowed value leaves scope, or use `copy`/an explicitly shared class

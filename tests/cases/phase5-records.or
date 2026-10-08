@@ -1,0 +1,5 @@
+void main() {
+  ({int x, String label}) point = (x: 7, label: "record");
+  print(point.x);
+  print(point.label);
+}

@@ -1,0 +1,5 @@
+export @rustName("ExternalUser") class User {}
+
+void main() {
+  var user = new User();
+}

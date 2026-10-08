@@ -1,0 +1,17 @@
+class Counter {
+  int count = 0;
+  void inc() { count = count + 1; }
+  int get() { return count; }
+  lend Counter selfRef() { return this; }
+}
+
+void show(lend Counter value) { print(value.get()); }
+void edit(lend mut Counter value) { value.inc(); }
+
+void main() {
+  var counter = new Counter();
+  edit(lend mut counter);
+  show(lend counter);
+  var copyOfCounter = copy counter;
+  print(copyOfCounter.get());
+}

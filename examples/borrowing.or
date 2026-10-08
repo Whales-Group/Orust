@@ -1,0 +1,15 @@
+class Counter {
+  int count = 0;
+  void inc() { count = count + 1; }
+  int get() { return count; }
+}
+
+void show(lend Counter counter) {
+  print(counter.get());
+}
+
+void main() {
+  var counter = new Counter();
+  counter.inc();
+  show(lend counter);
+}

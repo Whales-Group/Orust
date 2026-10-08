@@ -1,0 +1,3 @@
+class Hidden {
+  int value = 1;
+}

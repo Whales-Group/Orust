@@ -1,0 +1,3 @@
+export ({int x, String label}) make() {
+  return (x: 9, label: "shared");
+}

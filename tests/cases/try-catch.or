@@ -1,0 +1,11 @@
+Future<int> risky() async throws {
+  rust { return Ok(1); }
+}
+
+async void main() {
+  try {
+    await risky();
+  } catch (error) {
+    print("failed");
+  }
+}
