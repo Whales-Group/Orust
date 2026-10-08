@@ -22,7 +22,29 @@ renumbered.
 | OR0015 | trait implementation mismatch | A trait implementation is missing, conflicting, or has an incompatible signature. |
 | OR0016 | refutable binding | A destructuring pattern may fail and needs an `else` branch. |
 | OR0017 | unreachable pattern | A match pattern is shadowed by an earlier pattern. |
+| OR0601 | documentation | A doc comment has no declaration target. |
+| OR0602 | documentation | `@inheritDoc` has no resolvable parent documentation. |
+| OR0603 | documentation | A doc tag is unknown. |
+| OR0604 | documentation | A documentation link does not resolve. |
+| OR0605 | documentation | A doctest uses network features without `no_run` or `ignore`. |
+| OR0606 | documentation | An exported item is missing documentation. |
+| OR0607 | documentation | Documented parameters do not match the signature. |
+| OR0608 | documentation | Documented errors do not match the signature. |
+| OR0609 | documentation | `@returns` is attached to a function returning nothing. |
+| OR0610 | documentation | `@since` is outside the package release range. |
+| OR0611 | deprecated | A deprecated item is still used in the package. |
+| OR0612 | documentation | A singleton documentation tag is duplicated. |
+| OR0613 | documentation | Documentation has no summary after tag removal. |
+| OR0614 | documentation | Summary style is below the configured quality threshold. |
+| OR0615 | documentation | A TODO/FIXME/HACK/XXX work marker is present. |
+| OR0616 | configuration | A suppression names an unknown ORust lint code. |
 | OR0099 | runtime panic | The runtime received an otherwise-unclassified panic. |
 
 The original Rust code remains available in debug output, but user-facing
 messages use these stable ORust codes and `.or` source locations.
+
+Every code has an example and correction in
+[Diagnostics, examples, and exact locations](diagnostics.md). Parser errors
+also carry a precise zero-width insertion span when a punctuation token is
+missing, so an error such as a missing semicolon points to the end of the
+unfinished statement instead of the next closing delimiter.

@@ -1,0 +1,8 @@
+[package]
+name = "orust-fuzz-smoke"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+orust-syntax = { path = "../crates/orust-syntax" }

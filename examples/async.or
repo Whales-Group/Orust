@@ -1,0 +1,10 @@
+Future<int> fetchValue() async {
+  await Future.delayed(1.seconds);
+  return 7;
+}
+
+async void main() {
+  var value = await fetchValue();
+  print(value);
+  print("async work complete");
+}

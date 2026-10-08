@@ -4,4 +4,4 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-rustplain-diag = { path = "../rustplain-diag" }
+rustplain-diag = { version = "0.1.0", path = "../rustplain-diag" }

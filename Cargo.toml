@@ -6,12 +6,15 @@ members = [
     "crates/orust-emit",
     "crates/orust-diag",
     "crates/orust-cli",
+    "crates/orust-lsp",
     "crates/orust-runtime",
     "crates/rustplain-diag",
     "crates/rustplain-explain",
     "crates/rustplain-render",
     "crates/rustplain-cargo",
     "crates/rustplain-cli",
+    "conformance",
+    "fuzz",
 ]
 
 

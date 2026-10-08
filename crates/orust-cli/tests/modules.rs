@@ -64,6 +64,27 @@ fn runs_a_mixed_or_and_rust_project() {
 }
 
 #[test]
+fn runs_the_project_entry_without_a_file_argument() {
+    let _lock = PROJECT_LOCK.lock().unwrap();
+    let binary = env!("CARGO_BIN_EXE_orust");
+    let project = format!(
+        "{}/../../tests/projects/mixed-rust",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let output = Command::new(binary)
+        .current_dir(project)
+        .args(["run"])
+        .output()
+        .expect("run project entry");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "HELLO\n");
+}
+
+#[test]
 fn runs_a_cargo_manifest_project_without_orust_toml() {
     let _lock = PROJECT_LOCK.lock().unwrap();
     let binary = env!("CARGO_BIN_EXE_orust");
@@ -100,7 +121,7 @@ fn generated_library_preserves_the_cargo_package_identity() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let manifest = fs::read_to_string("target/orust/Cargo.toml").expect("generated manifest");
+    let manifest = fs::read_to_string("target/rust/Cargo.toml").expect("generated manifest");
     assert!(manifest.contains("name = \"cargo-basic\""));
 }
 
@@ -123,7 +144,7 @@ fn rust_cargo_crate_can_consume_a_generated_orust_library() {
         String::from_utf8_lossy(&output.stderr)
     );
     let generated_manifest = fs::read_to_string(format!(
-        "{}/../../target/orust/Cargo.toml",
+        "{}/../../target/rust/Cargo.toml",
         env!("CARGO_MANIFEST_DIR")
     ))
     .expect("generated manifest");

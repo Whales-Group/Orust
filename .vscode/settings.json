@@ -1,0 +1,9 @@
+{
+  "orust.lspPath": "${workspaceFolder}/target/debug/orust-lsp",
+  "rust-analyzer.files.exclude": [
+    "**/*.or"
+  ],
+  "files.exclude": {
+    "**/vendor": true
+  }
+}

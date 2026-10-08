@@ -1,4 +1,6 @@
-use orust_syntax::{ClosureBody, Expr, Function, Item, Param, Program, Span, Stmt};
+use orust_syntax::{
+    ClosureBody, DocBlock, DocTag, Expr, Function, Item, Param, Program, Span, Stmt,
+};
 use std::collections::{HashMap, HashSet};
 
 fn declared_name(name: &str, rust_name: &Option<String>) -> String {
@@ -193,6 +195,7 @@ fn collect_record_statements(
                 condition,
                 step,
                 body,
+                ..
             } => {
                 if let Some(initializer) = initializer {
                     if let Stmt::Var {
@@ -1882,6 +1885,23 @@ fn rewrite_constructor_expr(
             }
         }
         Expr::Call { callee, args } => {
+            if let Expr::Member {
+                object,
+                name: variant,
+            } = callee.as_ref()
+            {
+                if let Expr::Name(class_name) = object.as_ref() {
+                    if let Some(fields) = errors.get(&(class_name.clone(), variant.clone())) {
+                        let call_args = std::mem::take(args);
+                        *expression = Expr::NewArgs {
+                            name: error_encoding(class_name, variant, fields),
+                            args: call_args,
+                        };
+                        rewrite_constructor_expr(expression, constructors, errors);
+                        return;
+                    }
+                }
+            }
             rewrite_constructor_expr(callee, constructors, errors);
             for argument in args {
                 rewrite_constructor_expr(argument, constructors, errors);
@@ -2497,17 +2517,28 @@ pub fn emit_with_spans(program: &Program) -> GeneratedRust {
 }
 
 pub fn emit(program: &Program) -> String {
-    emit_internal(program, true)
+    emit_internal(program, true, false)
+}
+
+/// Emit generated Rust while retaining ordinary source comments next to the
+/// declarations they precede. Documentation comments are always emitted by
+/// `emit`; this option only adds non-documentation trivia.
+pub fn emit_with_comments(program: &Program) -> String {
+    emit_internal(program, true, true)
 }
 
 /// Emit a program whose record declarations are supplied by an enclosing
 /// generated project module. This keeps anonymous record shapes shared across
 /// source files instead of creating one Rust type per module.
 pub fn emit_without_records(program: &Program) -> String {
-    emit_internal(program, false)
+    emit_internal(program, false, false)
 }
 
-fn emit_internal(program: &Program, include_record_module: bool) -> String {
+pub fn emit_without_records_with_comments(program: &Program) -> String {
+    emit_internal(program, false, true)
+}
+
+fn emit_internal(program: &Program, include_record_module: bool, include_comments: bool) -> String {
     let mut program = program.clone();
     box_recursive_fields(&mut program);
     rewrite_source_references(&mut program);
@@ -2654,6 +2685,7 @@ fn emit_internal(program: &Program, include_record_module: bool) -> String {
         }
     }
     for (item_index, item) in program.items.iter().enumerate() {
+        emit_item_docs(&mut out, &program, item.span, include_comments);
         if let Some(attributes) = program.attributes.get(item_index) {
             emit_item_attributes(
                 &mut out,
@@ -2712,6 +2744,7 @@ fn emit_internal(program: &Program, include_record_module: bool) -> String {
                     generic_decl
                 ));
                 for f in &c.fields {
+                    emit_item_docs(&mut out, &program, f.span, include_comments);
                     out.push_str(&format!(
                         "    {}{}: {},\n",
                         visibility_prefix(f.visibility, c.exported),
@@ -2763,6 +2796,7 @@ fn emit_internal(program: &Program, include_record_module: bool) -> String {
                     out.push_str("    } }\n");
                 } else {
                     for constructor in &c.constructors {
+                        emit_item_docs(&mut out, &program, constructor.span, include_comments);
                         emit_constructor(
                             &mut out,
                             c,
@@ -2787,6 +2821,7 @@ fn emit_internal(program: &Program, include_record_module: bool) -> String {
                     for m in &c.methods {
                         let mut method = m.clone();
                         method.exported = c.exported;
+                        emit_item_docs(&mut out, &program, method.span, include_comments);
                         emit_function(
                             &mut out,
                             &method,
@@ -2967,6 +3002,7 @@ fn emit_internal(program: &Program, include_record_module: bool) -> String {
                         c.methods.iter().collect()
                     };
                     for m in methods {
+                        emit_item_docs(&mut out, &program, m.span, include_comments);
                         emit_function(
                             &mut out,
                             m,
@@ -3052,7 +3088,14 @@ fn emit_internal(program: &Program, include_record_module: bool) -> String {
                 }
                 out.push_str("}\n");
             }
-            Item::Error(error) => emit_error(&mut out, error, &interfaces, uses_spawn),
+            Item::Error(error) => emit_error(
+                &mut out,
+                error,
+                &program,
+                &interfaces,
+                uses_spawn,
+                include_comments,
+            ),
             Item::Enum(enum_decl) => emit_enum(&mut out, enum_decl, &interfaces, uses_spawn),
             Item::Extension(extension) => emit_extension(
                 &mut out,
@@ -3188,6 +3231,293 @@ fn emit_internal(program: &Program, include_record_module: bool) -> String {
     out
 }
 
+fn source_line(source: &str, offset: usize) -> usize {
+    source[..offset.min(source.len())]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1
+}
+
+fn emit_item_docs(out: &mut String, program: &Program, span: Span, include_comments: bool) {
+    if include_comments {
+        for comment in program
+            .leading_trivia(span)
+            .into_iter()
+            .filter(|comment| !comment.kind.is_doc())
+        {
+            out.push_str(&comment.text);
+            out.push('\n');
+        }
+    }
+    let item_line = source_line(&program.source, span.start);
+    let candidates = program
+        .comments
+        .iter()
+        .filter(|comment| comment.kind.is_doc() && comment.span.end <= span.start)
+        .collect::<Vec<_>>();
+    let Some(last) = candidates
+        .iter()
+        .rposition(|comment| comment.line_end + 1 >= item_line)
+    else {
+        return;
+    };
+    let mut first = last;
+    while first > 0 && candidates[first - 1].line_end + 1 >= candidates[first].line_start {
+        first -= 1;
+    }
+    let text = candidates[first..=last]
+        .iter()
+        .map(|comment| comment.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if let Some(comment) = candidates.get(first) {
+        let doc = DocBlock::parse(
+            &text,
+            Span {
+                start: comment.span.start,
+                end: candidates[last].span.end,
+            },
+        );
+        let doc = if doc.tags.iter().any(|tag| matches!(tag, DocTag::InheritDoc)) {
+            program.resolved_docs_for_span(span).unwrap_or(doc)
+        } else {
+            doc
+        };
+        emit_doc_attributes(out, &doc, program);
+        render_doc_block(out, &doc, program);
+    }
+}
+
+fn emit_doc_attributes(out: &mut String, doc: &DocBlock, program: &Program) {
+    for tag in &doc.tags {
+        match tag {
+            DocTag::Internal => out.push_str("#[doc(hidden)]\n"),
+            DocTag::Deprecated { since, note } => {
+                // `deprecated(note = ...)` is itself rendered as Markdown by rustdoc,
+                // but it has no reliable item scope for intra-doc links. Keep the
+                // renamed target readable without emitting a link that can warn or ICE.
+                let note = rewrite_doc_links(note, program)
+                    .replace("[`", "")
+                    .replace("`]", "")
+                    .replace('"', "\\\"");
+                if let Some(since) = since {
+                    out.push_str(&format!(
+                        "#[deprecated(since = \"{}\", note = \"{}\")]\n",
+                        since.replace('"', "\\\""),
+                        note
+                    ));
+                } else {
+                    out.push_str(&format!("#[deprecated(note = \"{note}\")]\n"));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn render_doc_block(out: &mut String, doc: &DocBlock, program: &Program) {
+    for line in doc.body.lines() {
+        out.push_str("///");
+        if !line.is_empty() {
+            out.push(' ');
+            out.push_str(&rewrite_doc_links(line, program));
+        }
+        out.push('\n');
+    }
+    let sections = [
+        "# Type parameters",
+        "# Arguments",
+        "# Returns",
+        "# Errors",
+        "# Panics",
+        "# Examples",
+        "# See also",
+        "# Authors",
+    ];
+    for heading in sections {
+        let matching = doc
+            .tags
+            .iter()
+            .filter(|tag| matches_doc_section(tag, heading))
+            .collect::<Vec<_>>();
+        if matching.is_empty() {
+            continue;
+        }
+        out.push_str("///\n/// ");
+        out.push_str(heading);
+        out.push('\n');
+        for tag in matching {
+            match tag {
+                DocTag::TypeParam { name, desc } | DocTag::Param { name, desc } => {
+                    out.push_str(&format!("/// - `{name}`: {desc}\n"));
+                }
+                DocTag::Returns(desc) | DocTag::Panics(desc) => {
+                    out.push_str(&format!("/// {desc}\n"));
+                }
+                DocTag::Throws { ty, desc } => {
+                    out.push_str(&format!("/// [`{ty}`]: {desc}\n"));
+                }
+                DocTag::Example { title, code } => {
+                    if let Some(title) = title {
+                        out.push_str(&format!("/// {title}\n"));
+                    }
+                    out.push_str("/// ```orust\n");
+                    for line in code.lines() {
+                        out.push_str("/// ");
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                    out.push_str("/// ```\n");
+                }
+                DocTag::See(link) => {
+                    out.push_str(&format!("/// {}\n", rewrite_doc_links(link, program)))
+                }
+                DocTag::Author { name, email, url } => {
+                    let mut value = name.clone();
+                    if let Some(email) = email {
+                        value.push_str(&format!(" <{email}>"));
+                    }
+                    if let Some(url) = url {
+                        value.push_str(&format!(" ({url})"));
+                    }
+                    out.push_str(&format!("/// - {value}\n"));
+                }
+                _ => {}
+            }
+        }
+    }
+    for tag in &doc.tags {
+        match tag {
+            DocTag::Since(version) => out.push_str(&format!("///\n/// *Since {version}*\n")),
+            DocTag::Version(version) => out.push_str(&format!("///\n/// *Version {version}*\n")),
+            DocTag::License(license) => out.push_str(&format!("///\n/// License: {license}\n")),
+            DocTag::Copyright(copyright) => {
+                out.push_str(&format!("///\n/// Copyright: {copyright}\n"))
+            }
+            DocTag::Note(text) => out.push_str(&format!("///\n/// > Note: {text}\n")),
+            DocTag::Warning(text) => out.push_str(&format!("///\n/// > Warning: {text}\n")),
+            DocTag::Deprecated { since, note } => {
+                let prefix = since
+                    .as_deref()
+                    .map_or(String::new(), |value| format!("since {value} "));
+                out.push_str(&format!(
+                    "///\n/// Deprecated {prefix}{}\n",
+                    rewrite_doc_links(note, program)
+                ));
+            }
+            DocTag::Category(_) | DocTag::Todo(_) | DocTag::Internal | DocTag::InheritDoc => {}
+            DocTag::Unknown { name, text } => {
+                out.push_str("/// @");
+                out.push_str(name);
+                if !text.is_empty() {
+                    out.push(' ');
+                    out.push_str(text);
+                }
+                out.push('\n');
+            }
+            _ => {}
+        }
+    }
+}
+
+fn matches_doc_section(tag: &DocTag, heading: &str) -> bool {
+    match heading {
+        "# Type parameters" => matches!(tag, DocTag::TypeParam { .. }),
+        "# Arguments" => matches!(tag, DocTag::Param { .. }),
+        "# Returns" => matches!(tag, DocTag::Returns(_)),
+        "# Errors" => matches!(tag, DocTag::Throws { .. }),
+        "# Panics" => matches!(tag, DocTag::Panics(_)),
+        "# Examples" => matches!(tag, DocTag::Example { .. }),
+        "# See also" => matches!(tag, DocTag::See(_)),
+        "# Authors" => matches!(tag, DocTag::Author { .. }),
+        _ => false,
+    }
+}
+
+fn rust_member_name(name: &str) -> String {
+    let mut result = String::new();
+    for (index, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() && index != 0 {
+            result.push('_');
+        }
+        result.push(ch.to_ascii_lowercase());
+    }
+    result
+}
+
+fn rewrite_doc_links(text: &str, program: &Program) -> String {
+    let mut result = text.to_owned();
+    for item in &program.items {
+        let (orust_name, rust_name) = match &item.node {
+            Item::Class(value) => (
+                &value.name,
+                value.rust_name.as_deref().unwrap_or(&value.name),
+            ),
+            Item::Function(value) => (
+                &value.name,
+                value.rust_name.as_deref().unwrap_or(&value.name),
+            ),
+            Item::Interface(value) => (
+                &value.name,
+                value.rust_name.as_deref().unwrap_or(&value.name),
+            ),
+            Item::Enum(value) => (
+                &value.name,
+                value.rust_name.as_deref().unwrap_or(&value.name),
+            ),
+            Item::Error(value) => (
+                &value.name,
+                value.rust_name.as_deref().unwrap_or(&value.name),
+            ),
+            Item::TypeAlias(value) => (
+                &value.name,
+                value.rust_name.as_deref().unwrap_or(&value.name),
+            ),
+            Item::Newtype(value) => (
+                &value.name,
+                value.rust_name.as_deref().unwrap_or(&value.name),
+            ),
+            Item::Extension(_) => continue,
+        };
+        result = result.replace(&format!("[{orust_name}]"), &format!("[`{rust_name}`]"));
+        result = result.replace(
+            &format!("{{@link {orust_name}}}"),
+            &format!("[`{rust_name}`]"),
+        );
+        let prefix = format!("[{orust_name}.");
+        if let Some(start) = result.find(&prefix) {
+            if let Some(end) = result[start..].find(']') {
+                let member_start = start + prefix.len();
+                let member_end = start + end;
+                let member = &result[member_start..member_end];
+                result.replace_range(
+                    start..=member_end,
+                    &format!("[`{rust_name}::{}`]", rust_member_name(member)),
+                );
+            }
+        }
+    }
+    for item in &program.items {
+        let Item::Class(class) = &item.node else {
+            continue;
+        };
+        let class_name = class.rust_name.as_deref().unwrap_or(&class.name);
+        for method in &class.methods {
+            let rust_method = method.rust_name.as_deref().unwrap_or(method.name.as_str());
+            result = result.replace(
+                &format!("[{}]", method.name),
+                &format!("[`{class_name}::{rust_method}`]"),
+            );
+            result = result.replace(
+                &format!("{{@link {}}}", method.name),
+                &format!("[`{class_name}::{rust_method}`]"),
+            );
+        }
+    }
+    result
+}
+
 fn emit_rust_uses(out: &mut String, program: &Program) {
     for rust_use in &program.rust_uses {
         out.push_str("use ");
@@ -3261,8 +3591,10 @@ fn emit_display_impl(out: &mut String, class: &orust_syntax::Class) {
 fn emit_error(
     out: &mut String,
     error: &orust_syntax::Error,
+    program: &Program,
     interfaces: &HashSet<String>,
     with_spawn: bool,
+    include_comments: bool,
 ) {
     let name = declared_name(&error.name, &error.rust_name);
     if !error.cases.is_empty() {
@@ -3272,6 +3604,7 @@ fn emit_error(
             name
         ));
         for case in &error.cases {
+            emit_item_docs(out, program, case.span, include_comments);
             if case.fields.is_empty() {
                 out.push_str(&format!("    {},\n", case.name));
             } else {
@@ -4453,11 +4786,16 @@ fn emit_function(
             declared_name(&f.name, &f.rust_name)
         ));
     } else if method {
-        out.push_str(if force_mut_receiver || function_needs_mut(f) {
-            "&mut self"
-        } else {
-            "&self"
-        });
+        out.push_str(
+            if force_mut_receiver
+                || function_needs_mut(f)
+                || method_calls_mutable_method(f, method_mutability)
+            {
+                "&mut self"
+            } else {
+                "&self"
+            },
+        );
         if !f.params.is_empty() {
             out.push_str(", ");
         }
@@ -4717,7 +5055,161 @@ fn emit_function(
             }
         }
     }
+    if f.throws && matches!(f.return_type.as_str(), "void" | "()") {
+        out.push_str("    Ok(())\n");
+    }
     out.push_str("}\n");
+}
+
+fn method_calls_mutable_method(
+    function: &Function,
+    methods: &HashMap<String, HashMap<String, bool>>,
+) -> bool {
+    fn expression_calls_mutable_method(
+        expression: &Expr,
+        methods: &HashMap<String, HashMap<String, bool>>,
+    ) -> bool {
+        match expression {
+            Expr::Call { callee, args } => {
+                let direct = match callee.as_ref() {
+                    Expr::Name(name) => methods
+                        .values()
+                        .any(|class| class.get(name).copied().unwrap_or(false)),
+                    Expr::Member { object, name } => {
+                        matches!(object.as_ref(), Expr::This)
+                            && methods
+                                .values()
+                                .any(|class| class.get(name).copied().unwrap_or(false))
+                    }
+                    _ => false,
+                };
+                direct
+                    || expression_calls_mutable_method(callee, methods)
+                    || args
+                        .iter()
+                        .any(|arg| expression_calls_mutable_method(arg, methods))
+            }
+            Expr::Member { object, .. }
+            | Expr::OptionalMember { object, .. }
+            | Expr::Borrow { value: object, .. }
+            | Expr::Copy(object)
+            | Expr::Await(object)
+            | Expr::Spawn(object) => expression_calls_mutable_method(object, methods),
+            Expr::Binary { left, right, .. } | Expr::Coalesce { left, right } => {
+                expression_calls_mutable_method(left, methods)
+                    || expression_calls_mutable_method(right, methods)
+            }
+            Expr::Index { object, index } => {
+                expression_calls_mutable_method(object, methods)
+                    || expression_calls_mutable_method(index, methods)
+            }
+            Expr::Slice {
+                object, start, end, ..
+            } => {
+                expression_calls_mutable_method(object, methods)
+                    || start
+                        .as_deref()
+                        .is_some_and(|value| expression_calls_mutable_method(value, methods))
+                    || end
+                        .as_deref()
+                        .is_some_and(|value| expression_calls_mutable_method(value, methods))
+            }
+            Expr::List(values) => values
+                .iter()
+                .any(|value| expression_calls_mutable_method(value, methods)),
+            Expr::NamedArg { value, .. } => expression_calls_mutable_method(value, methods),
+            Expr::Closure { body, .. } => match body {
+                ClosureBody::Expr(value) => expression_calls_mutable_method(value, methods),
+                ClosureBody::Block(body) => statements_call_mutable_method(body, methods),
+            },
+            _ => false,
+        }
+    }
+    fn statements_call_mutable_method(
+        statements: &[orust_syntax::Spanned<Stmt>],
+        methods: &HashMap<String, HashMap<String, bool>>,
+    ) -> bool {
+        statements.iter().any(|statement| match &statement.node {
+            Stmt::Var { initializer, .. }
+            | Stmt::Print(initializer)
+            | Stmt::Expr(initializer)
+            | Stmt::Return(Some(initializer))
+            | Stmt::Throw(initializer) => expression_calls_mutable_method(initializer, methods),
+            Stmt::If {
+                condition,
+                then_body,
+                else_body,
+            } => {
+                expression_calls_mutable_method(condition, methods)
+                    || statements_call_mutable_method(then_body, methods)
+                    || statements_call_mutable_method(else_body, methods)
+            }
+            Stmt::While { condition, body }
+            | Stmt::WhileCase {
+                value: condition,
+                body,
+                ..
+            } => {
+                expression_calls_mutable_method(condition, methods)
+                    || statements_call_mutable_method(body, methods)
+            }
+            Stmt::For {
+                condition,
+                step,
+                body,
+                ..
+            } => {
+                condition
+                    .as_ref()
+                    .is_some_and(|value| expression_calls_mutable_method(value, methods))
+                    || step
+                        .as_ref()
+                        .is_some_and(|value| expression_calls_mutable_method(value, methods))
+                    || statements_call_mutable_method(body, methods)
+            }
+            Stmt::ForIn { iterable, body, .. }
+            | Stmt::AwaitFor {
+                stream: iterable,
+                body,
+                ..
+            } => {
+                expression_calls_mutable_method(iterable, methods)
+                    || statements_call_mutable_method(body, methods)
+            }
+            Stmt::TryCatch {
+                body, catch_body, ..
+            } => {
+                statements_call_mutable_method(body, methods)
+                    || statements_call_mutable_method(catch_body, methods)
+            }
+            Stmt::Switch { value, cases } => {
+                expression_calls_mutable_method(value, methods)
+                    || cases
+                        .iter()
+                        .any(|case| statements_call_mutable_method(&case.body, methods))
+            }
+            Stmt::IfCase {
+                value,
+                then_body,
+                else_body,
+                ..
+            } => {
+                expression_calls_mutable_method(value, methods)
+                    || statements_call_mutable_method(then_body, methods)
+                    || statements_call_mutable_method(else_body, methods)
+            }
+            Stmt::PatternVar {
+                initializer,
+                else_body,
+                ..
+            } => {
+                expression_calls_mutable_method(initializer, methods)
+                    || statements_call_mutable_method(else_body, methods)
+            }
+            Stmt::Return(None) | Stmt::Rust(_) => false,
+        })
+    }
+    statements_call_mutable_method(&function.body, methods)
 }
 
 fn inferred_generic_bounds(function: &Function) -> Vec<String> {

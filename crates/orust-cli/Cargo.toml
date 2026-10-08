@@ -8,7 +8,7 @@ name = "orust"
 path = "src/main.rs"
 
 [dependencies]
-orust-syntax = { path = "../orust-syntax" }
-orust-emit = { path = "../orust-emit" }
-orust-diag = { path = "../orust-diag" }
-orust-runtime = { path = "../orust-runtime" }
+orust-syntax = { version = "0.1.0", path = "../orust-syntax" }
+orust-emit = { version = "0.1.0", path = "../orust-emit" }
+orust-diag = { version = "0.1.0", path = "../orust-diag" }
+orust-runtime = { version = "0.1.0", path = "../orust-runtime" }

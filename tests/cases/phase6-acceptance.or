@@ -1,0 +1,42 @@
+//! Billing utilities.
+//!
+//! @author Ada Lovelace <ada@example.com>
+//! @since 0.2.0
+
+/// A customer invoice.
+///
+/// Totals are kept in cents to avoid floating point rounding errors.
+///
+/// @author Ada Lovelace
+/// @since 0.2.0
+/// @example Discounting an invoice
+/// ```orust
+/// var inv = new Invoice(1000);
+/// inv.applyDiscount(10);
+/// expect(inv.total == 900);
+/// ```
+export class Invoice {
+    /// Total in cents. Never negative.
+    int total;
+
+    Invoice(this.total);
+
+    /// Applies a percentage discount to the total.
+    ///
+    /// @param percent Whole number from 0 to 100.
+  /// @throws DiscountError if `percent` is outside 0 to 100.
+  /// @see [Invoice.total]
+  void applyDiscount(int percent) throws DiscountError {
+    if (percent < 0 || percent > 100) { throw DiscountError.OutOfRange(percent); }
+        total = total * (100 - percent) / 100;
+    }
+
+  /// @deprecated since 0.3.0 Use [applyDiscount] instead.
+    void discount(int p) { applyDiscount(p); }
+}
+
+/// Why a discount was rejected.
+export error DiscountError {
+    /// The percentage was not between 0 and 100.
+    OutOfRange(int percent) => "discount out of range: $percent",
+}

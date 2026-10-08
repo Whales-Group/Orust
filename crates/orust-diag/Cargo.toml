@@ -5,5 +5,5 @@ edition.workspace = true
 
 [dependencies]
 serde_json = "1"
-orust-syntax = { path = "../orust-syntax" }
-orust-emit = { path = "../orust-emit" }
+orust-syntax = { version = "0.1.0", path = "../orust-syntax" }
+orust-emit = { version = "0.1.0", path = "../orust-emit" }

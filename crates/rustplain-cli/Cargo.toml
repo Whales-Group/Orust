@@ -9,6 +9,6 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-rustplain-diag = { path = "../rustplain-diag" }
-rustplain-render = { path = "../rustplain-render" }
-rustplain-cargo = { path = "../rustplain-cargo" }
+rustplain-diag = { version = "0.1.0", path = "../rustplain-diag" }
+rustplain-render = { version = "0.1.0", path = "../rustplain-render" }
+rustplain-cargo = { version = "0.1.0", path = "../rustplain-cargo" }

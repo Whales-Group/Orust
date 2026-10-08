@@ -1,0 +1,14 @@
+rust use std::time::Duration;
+
+@rustImport("std::cmp::max") int maxValue(int left, int right);
+
+void main() {
+  rust {
+    let pause = Duration::from_millis(1);
+    std::thread::sleep(pause);
+  }
+
+  var larger = maxValue(12, 30);
+  print(larger);
+  print("Rust interop complete");
+}

@@ -1,0 +1,19 @@
+class Report {
+  String title;
+  List<int> values;
+
+  Report(this.title, this.values);
+
+  int total() {
+    return values[0] + values[1] + values[2];
+  }
+}
+
+void main() {
+  ({int total, String label}) summary = (total: 42, label: "records");
+  var report = new Report("weekly", [10, 14, 18]);
+  print(report.title);
+  print(report.total());
+  print(summary.label);
+  print(summary.total);
+}

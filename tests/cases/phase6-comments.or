@@ -1,0 +1,9 @@
+// Keep this note beside the generated function.
+class User {
+    // Keep this note beside the generated field.
+    String name;
+}
+
+void main() {
+    print(1);
+}

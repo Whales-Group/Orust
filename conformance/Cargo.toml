@@ -1,0 +1,9 @@
+[package]
+name = "orust-conformance"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dev-dependencies]
+orust-syntax = { path = "../crates/orust-syntax" }
+orust-emit = { path = "../crates/orust-emit" }

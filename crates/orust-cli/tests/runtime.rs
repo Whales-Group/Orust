@@ -20,6 +20,20 @@ fn run_case(case: &str) -> String {
     String::from_utf8(output.stdout).expect("UTF-8 stdout")
 }
 
+fn test_case(case: &str) {
+    let _guard = RUN_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_orust"))
+        .current_dir(env!("CARGO_MANIFEST_DIR").to_string() + "/../..")
+        .args(["test", case])
+        .output()
+        .expect("test ORust case");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn counter_stdout_is_deterministic() {
     assert_eq!(run_case("tests/cases/counter.or"), "1\n1\n");
@@ -41,6 +55,11 @@ fn phase4_acceptance_program_runs() {
         run_case("tests/cases/phase4-acceptance.or"),
         "phase4\n5\nnull\n2\n3\n"
     );
+}
+
+#[test]
+fn phase4_full_acceptance_program_tests() {
+    test_case("tests/cases/phase4-full.or");
 }
 
 #[test]

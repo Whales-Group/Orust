@@ -1,0 +1,15 @@
+[package]
+name = "orust-lsp"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "orust-lsp"
+path = "src/main.rs"
+
+[dependencies]
+orust-syntax = { path = "../orust-syntax" }
+orust-emit = { path = "../orust-emit" }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "io-std"] }
+tower-lsp = "0.20"

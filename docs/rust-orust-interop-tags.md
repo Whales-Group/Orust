@@ -360,13 +360,13 @@ source/**/*.or
 filter / translate
       │
       ▼
-target/orust/
+target/rust/
       │
       ▼
 Cargo + rustc
       │
       ▼
-target/orust/target/
+target/rust/target/
       │
       ▼
 compiled Rust binary and runtime output
@@ -383,7 +383,7 @@ compilation, `build` may stop after producing the binary, and `emit` may stop
 after printing the generated source, but none of these commands may silently
 execute ORust semantics separately from Rust.
 
-`target/orust/` is the single canonical generated project and build workspace.
+`target/rust/` is the single canonical generated project and build workspace.
 This avoids duplicate generated trees, follows Cargo conventions, keeps build
 artifacts out of source control, and remains inspectable by opening the files
 there or using `orust emit`.
@@ -409,7 +409,7 @@ Rust, and Cargo coordinates the complete dependency graph.
        + symbol bridge               │
              │                       │
              ▼                       │
-       target/orust/src/*.rs ◄───────┘
+       target/rust/src/*.rs ◄───────┘
              │
              ▼
       Cargo dependency graph
@@ -418,7 +418,7 @@ Rust, and Cargo coordinates the complete dependency graph.
           rustc
              │
              ▼
-     target/orust/target/
+     target/rust/target/
              │
              ▼
        executable / library
@@ -439,7 +439,7 @@ Rust crate: use my_orust_crate::Config;
 ```
 
 When the source project has a `[package] name` in `Cargo.toml`, the generated
-library preserves that package identity in `target/orust/Cargo.toml`; a
+library preserves that package identity in `target/rust/Cargo.toml`; a
 standalone `.or` file uses `orust-generated` as its fallback package name.
 
 ```rust
@@ -525,6 +525,6 @@ The seamless contract is therefore:
 1. Write high-level object-oriented code in ORust.
 2. Write any native Rust code directly in `.rs` files or `rust` sections.
 3. Declare both ecosystems through Cargo.
-4. Filter everything into `target/orust/`.
+4. Filter everything into `target/rust/`.
 5. Let Cargo and `rustc` resolve, type-check, borrow-check, compile, link, and
    run the complete program.

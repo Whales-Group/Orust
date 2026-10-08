@@ -1,15 +1,23 @@
-class Counter {
-  int count = 0;
-  void inc() { count = count + 1; }
-  int get() { return count; }
+class Ledger {
+  int balance = 0;
+
+  void deposit(int amount) {
+    balance = balance + amount;
+  }
+
+  int total() {
+    return balance;
+  }
 }
 
-void show(lend Counter counter) {
-  print(counter.get());
+void inspect(lend Ledger ledger) {
+  print(ledger.total());
 }
 
 void main() {
-  var counter = new Counter();
-  counter.inc();
-  show(lend counter);
+  var ledger = new Ledger();
+  ledger.deposit(10);
+  ledger.deposit(25);
+  inspect(lend ledger);
+  print(ledger.total());
 }

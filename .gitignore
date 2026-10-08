@@ -1,4 +1,11 @@
 /vscode-orust
 /target
-/crates/**/target
-/tests/**/target
+/vendor
+
+# Local OS, editor, and packaged build artifacts.
+.DS_Store
+**/.DS_Store
+*.vsix
+
+# Rust build output in nested example projects.
+**/target

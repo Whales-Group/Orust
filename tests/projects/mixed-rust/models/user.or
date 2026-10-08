@@ -1,1 +1,2 @@
+/// Represents a user.
 export class User {}

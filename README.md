@@ -70,6 +70,27 @@ For the complete syntax and ownership rules, see [AGENTS.md](AGENTS.md),
 [async semantics](docs/async.md), and [polymorphism](docs/polymorphism.md).
 The next planned module work is tracked in [Phase3.md](Phase3.md).
 
+## Installing a release
+
+Pushing a version tag such as `v0.1.0` runs the release workflow. It builds
+`orust` and `orust-lsp` for macOS Apple Silicon, macOS Intel, Linux x64, and
+Windows x64, packages the runtime with each archive, and attaches the
+installable archives to the GitHub Release. The VS Code extension is released
+independently from its own repository.
+
+Download the archive for the host platform, put `orust` and `orust-lsp` on
+`PATH`. Install the VS Code extension separately from its own repository.
+
+For maintainers, publish a release with:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Release archives are self-contained and include `runtime/`, so generated
+Cargo projects do not depend on a checkout of this repository.
+
 Projects may filter local imports with `show` and `hide`:
 
 ```orust
@@ -91,11 +112,31 @@ cargo run -p orust-cli -- emit tests/cases/hello.or
 cargo run -p orust-cli -- build tests/cases/hello.or
 cargo run -p orust-cli -- build --lib tests/cases/hello.or
 cargo run -p orust-cli -- run tests/cases/hello.or
+cargo run -p orust-cli -- format tests/cases/hello.or --dry-run
+cargo run -p orust-cli -- lint tests/cases/hello.or
 cargo run -p orust-cli -- new my-orust-project
 cargo run -p orust-cli -- new my-orust-library --lib
 cargo run -p orust-cli -- explain OR0005
 ```
 
-The root [examples](examples) directory contains three small programs. Once the CLI is installed, a project can be scaffolded with `orust new my-orust-project`.
+The root [examples](examples) directory contains four runnable programs:
+`borrowing.or` demonstrates `lend` and shared state, `records.or` combines
+records and collections, `async.or` demonstrates Tokio-backed `Future`/`await`,
+and `rust-interop.or` shows direct Rust imports and passthrough. Run any one
+with `orust run examples/<name>.or`. Once the CLI is installed, a project can
+be scaffolded with `orust new my-orust-project` and run from its directory with
+`orust run`.
 
-The language tour and implementation rules are documented in [AGENTS.md](AGENTS.md). Progress is tracked in [Phases.md](Phases.md). Generated Cargo projects and Rust JSON diagnostics are written under `target/orust/`.
+Editor integration is provided by the Rust `orust-lsp` server. Build it with
+`cargo build -p orust-lsp`, then set the VS Code extension's `orust.lspPath`
+setting to `target/debug/orust-lsp` (or put `orust-lsp` on `PATH`). The server
+uses the same parser, symbol model, diagnostics, and emitter as the CLI.
+It registers only `.or` documents; `.rs` files continue to use the normal
+`rust-analyzer` extension. In a mixed Cargo project both language servers run
+side by side and Cargo/rustc remain the shared compilation authority.
+
+The language tour and implementation rules are documented in [AGENTS.md](AGENTS.md). Progress is tracked in [Phases.md](Phases.md). Generated Rust projects and Rust JSON diagnostics are written under `target/rust/`; built binaries are copied to `target/<package-name>`.
+
+Diagnostic behavior, examples, documentation warnings, and exact source-span
+tracking are described in [docs/diagnostics.md](docs/diagnostics.md) and the
+[ORust diagnostic code registry](docs/error-codes.md).

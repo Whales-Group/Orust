@@ -12,8 +12,313 @@ pub struct Spanned<T> {
     pub span: Span,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommentKind {
+    Line,
+    Block,
+    OuterDocLine,
+    OuterDocBlock,
+    InnerDocLine,
+    InnerDocBlock,
+    Shebang,
+}
+
+impl CommentKind {
+    pub fn is_doc(self) -> bool {
+        matches!(
+            self,
+            Self::OuterDocLine | Self::OuterDocBlock | Self::InnerDocLine | Self::InnerDocBlock
+        )
+    }
+
+    pub fn is_outer_doc(self) -> bool {
+        matches!(self, Self::OuterDocLine | Self::OuterDocBlock)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Comment {
+    pub kind: CommentKind,
+    /// The exact source spelling, including its comment delimiters.
+    pub text: String,
+    pub span: Span,
+    pub line_start: usize,
+    pub line_end: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocBlock {
+    pub raw: String,
+    pub summary: String,
+    pub body: String,
+    pub tags: Vec<DocTag>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DocTag {
+    Author {
+        name: String,
+        email: Option<String>,
+        url: Option<String>,
+    },
+    Param {
+        name: String,
+        desc: String,
+    },
+    TypeParam {
+        name: String,
+        desc: String,
+    },
+    Returns(String),
+    Throws {
+        ty: String,
+        desc: String,
+    },
+    Panics(String),
+    Example {
+        title: Option<String>,
+        code: String,
+    },
+    See(String),
+    Since(String),
+    Deprecated {
+        since: Option<String>,
+        note: String,
+    },
+    Version(String),
+    Todo(String),
+    Note(String),
+    Warning(String),
+    Internal,
+    Category(String),
+    InheritDoc,
+    License(String),
+    Copyright(String),
+    Unknown {
+        name: String,
+        text: String,
+    },
+}
+
+impl Comment {
+    pub fn doc_block(&self) -> Option<DocBlock> {
+        self.kind
+            .is_doc()
+            .then(|| DocBlock::parse(&self.text, self.span))
+    }
+}
+
+impl DocBlock {
+    pub fn parse(text: &str, span: Span) -> Self {
+        let content = normalize_doc_text(text);
+        let mut body_lines = Vec::new();
+        let mut tags: Vec<(String, Vec<String>)> = Vec::new();
+        let mut current = None;
+        let mut fenced = false;
+        for line in content.lines() {
+            let line = line.trim_end();
+            let trimmed = line.trim_start();
+            if !fenced && trimmed.starts_with('@') {
+                let value = trimmed[1..].trim_start();
+                let (name, rest) = value.split_once(char::is_whitespace).unwrap_or((value, ""));
+                tags.push((name.to_owned(), vec![rest.trim_start().to_owned()]));
+                current = Some(tags.len() - 1);
+            } else if let Some(index) = current {
+                tags[index].1.push(line.to_owned());
+            } else {
+                body_lines.push(line.to_owned());
+            }
+            if trimmed.starts_with("```") {
+                fenced = !fenced;
+            }
+        }
+        let body = body_lines.join("\n").trim().to_owned();
+        let summary = body
+            .split("\n\n")
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        let tags = tags
+            .into_iter()
+            .map(|(name, lines)| parse_doc_tag(&name, &lines))
+            .collect();
+        Self {
+            raw: text.to_owned(),
+            summary,
+            body,
+            tags,
+            span,
+        }
+    }
+}
+
+fn normalize_doc_text(text: &str) -> String {
+    if text.starts_with("///") || text.starts_with("//!") {
+        return text
+            .lines()
+            .map(|line| {
+                line.get(3..)
+                    .unwrap_or_default()
+                    .strip_prefix(' ')
+                    .unwrap_or_else(|| line.get(3..).unwrap_or_default())
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    if text.starts_with("/*") {
+        let inner = text
+            .strip_prefix("/*!")
+            .or_else(|| text.strip_prefix("/**"))
+            .unwrap_or(text)
+            .strip_suffix("*/")
+            .unwrap_or(text);
+        return inner
+            .lines()
+            .map(|line| {
+                let line = line.trim_start();
+                line.strip_prefix('*')
+                    .unwrap_or(line)
+                    .strip_prefix(' ')
+                    .unwrap_or_else(|| line.strip_prefix('*').unwrap_or(line))
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    text.to_owned()
+}
+
+fn parse_doc_tag(name: &str, lines: &[String]) -> DocTag {
+    let text = lines.join("\n").trim().to_owned();
+    match name {
+        "author" => parse_author(&text),
+        "param" => parse_named_tag(&text, false),
+        "typeParam" => parse_named_tag(&text, true),
+        "returns" => DocTag::Returns(text),
+        "throws" => {
+            let (ty, desc) = text.split_once(char::is_whitespace).unwrap_or((&text, ""));
+            DocTag::Throws {
+                ty: ty.to_owned(),
+                desc: desc.trim().to_owned(),
+            }
+        }
+        "panics" => DocTag::Panics(text),
+        "example" => {
+            let mut lines = text.lines();
+            let title = lines.next().filter(|line| !line.trim().starts_with("```"));
+            let mut code = Vec::new();
+            let mut fenced = false;
+            for line in lines {
+                if line.trim_start().starts_with("```") {
+                    fenced = !fenced;
+                    continue;
+                }
+                if fenced {
+                    code.push(line);
+                }
+            }
+            DocTag::Example {
+                title: title
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned),
+                code: code.join("\n"),
+            }
+        }
+        "see" => DocTag::See(text),
+        "since" => DocTag::Since(text),
+        "deprecated" => parse_deprecated(&text),
+        "version" => DocTag::Version(text),
+        "todo" => DocTag::Todo(text),
+        "note" => DocTag::Note(text),
+        "warning" => DocTag::Warning(text),
+        "internal" => DocTag::Internal,
+        "category" => DocTag::Category(text),
+        "inheritDoc" => DocTag::InheritDoc,
+        "license" => DocTag::License(text),
+        "copyright" => DocTag::Copyright(text),
+        _ => DocTag::Unknown {
+            name: name.to_owned(),
+            text,
+        },
+    }
+}
+
+fn parse_named_tag(text: &str, type_param: bool) -> DocTag {
+    let (name, desc) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
+    if type_param {
+        DocTag::TypeParam {
+            name: name.to_owned(),
+            desc: desc.trim().to_owned(),
+        }
+    } else {
+        DocTag::Param {
+            name: name.to_owned(),
+            desc: desc.trim().to_owned(),
+        }
+    }
+}
+
+fn parse_author(text: &str) -> DocTag {
+    let mut name = text.to_owned();
+    let mut email = None;
+    let mut url = None;
+    if let Some(start) = name.find('<') {
+        if let Some(end_offset) = name[start + 1..].find('>') {
+            let end = start + 1 + end_offset;
+            email = Some(name[start + 1..end].to_owned());
+            name.replace_range(start..=end, "");
+        }
+    }
+    if let Some(start) = name.rfind('(') {
+        if name.ends_with(')') {
+            url = Some(name[start + 1..name.len() - 1].to_owned());
+            name.truncate(start);
+        }
+    }
+    DocTag::Author {
+        name: name.trim().to_owned(),
+        email,
+        url,
+    }
+}
+
+fn parse_deprecated(text: &str) -> DocTag {
+    let mut rest = text;
+    let mut since = None;
+    if let Some(value) = rest.strip_prefix("since ") {
+        let (version, note) = value.split_once(char::is_whitespace).unwrap_or((value, ""));
+        since = Some(version.to_owned());
+        rest = note.trim();
+    }
+    DocTag::Deprecated {
+        since,
+        note: rest.to_owned(),
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LintSeverity {
+    Warning,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lint {
+    pub code: &'static str,
+    pub message: String,
+    pub severity: LintSeverity,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Program {
+    /// The original source, retained so tools can implement lossless modes.
+    pub source: String,
+    pub bom: bool,
+    pub shebang: Option<Comment>,
+    pub comments: Vec<Comment>,
+    pub lints: Vec<Lint>,
     pub imports: Vec<Import>,
     pub exports: Vec<Export>,
     /// Crate-level Rust `use` declarations that should be emitted alongside
@@ -21,6 +326,219 @@ pub struct Program {
     pub rust_uses: Vec<String>,
     pub attributes: Vec<ItemAttributes>,
     pub items: Vec<Spanned<Item>>,
+}
+
+impl Program {
+    pub fn lossless_source(&self) -> &str {
+        &self.source
+    }
+
+    /// Recompute documentation lints with project metadata that is not part of
+    /// a standalone source file, such as the package version.
+    pub fn lint_documentation(
+        &mut self,
+        package_version: Option<&str>,
+        first_release: Option<&str>,
+    ) {
+        self.lints = collect_comment_lints_with_context(
+            self,
+            package_version.and_then(parse_version),
+            first_release.and_then(parse_version),
+        );
+    }
+
+    pub fn doc_blocks(&self) -> Vec<DocBlock> {
+        let comments = self
+            .comments
+            .iter()
+            .filter(|comment| comment.kind.is_doc())
+            .collect::<Vec<_>>();
+        let mut blocks = Vec::new();
+        let mut start = 0;
+        while start < comments.len() {
+            let mut end = start;
+            while end + 1 < comments.len()
+                && comments[end].kind == comments[end + 1].kind
+                && comments[end].line_end + 1 >= comments[end + 1].line_start
+            {
+                end += 1;
+            }
+            let text = comments[start..=end]
+                .iter()
+                .map(|comment| comment.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            blocks.push(DocBlock::parse(
+                &text,
+                Span {
+                    start: comments[start].span.start,
+                    end: comments[end].span.end,
+                },
+            ));
+            start = end + 1;
+        }
+        blocks
+    }
+
+    pub fn docs_for_span(&self, span: Span) -> Option<DocBlock> {
+        let comments = self
+            .comments
+            .iter()
+            .filter(|comment| comment.kind.is_doc() && comment.span.end <= span.start)
+            .collect::<Vec<_>>();
+        let item_line = line_at(&self.source, span.start);
+        let last = comments
+            .iter()
+            .rposition(|comment| comment.line_end + 1 >= item_line)?;
+        let mut first = last;
+        while first > 0
+            && comments[first - 1].kind == comments[first].kind
+            && comments[first - 1].line_end + 1 >= comments[first].line_start
+        {
+            first -= 1;
+        }
+        let text = comments[first..=last]
+            .iter()
+            .map(|comment| comment.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        Some(DocBlock::parse(
+            &text,
+            Span {
+                start: comments[first].span.start,
+                end: comments[last].span.end,
+            },
+        ))
+    }
+
+    /// Resolve `@inheritDoc` for a method implemented by a class.  The
+    /// interface method is the source of truth, so the returned block can be
+    /// consumed by both diagnostics and the Rust emitter.
+    pub fn inherited_docs_for_span(&self, span: Span) -> Option<DocBlock> {
+        for item in &self.items {
+            let Item::Class(class) = &item.node else {
+                continue;
+            };
+            let Some(method) = class.methods.iter().find(|method| method.span == span) else {
+                continue;
+            };
+            for implemented in &class.implements {
+                let interface_name = implemented.split('<').next().unwrap_or(implemented).trim();
+                let Some(interface) = self.items.iter().find_map(|item| match &item.node {
+                    Item::Interface(interface) if interface.name == interface_name => {
+                        Some(interface)
+                    }
+                    _ => None,
+                }) else {
+                    continue;
+                };
+                let Some(parent) = interface
+                    .methods
+                    .iter()
+                    .find(|candidate| candidate.name == method.name)
+                else {
+                    continue;
+                };
+                let Some(doc) = self.docs_for_span(parent.span) else {
+                    continue;
+                };
+                if !doc.tags.iter().any(|tag| matches!(tag, DocTag::InheritDoc)) {
+                    return Some(doc);
+                }
+            }
+        }
+        None
+    }
+
+    /// Return the item's own documentation, replacing a resolvable
+    /// `@inheritDoc` marker with the interface documentation it names.
+    pub fn resolved_docs_for_span(&self, span: Span) -> Option<DocBlock> {
+        let own = self.docs_for_span(span)?;
+        if own.tags.iter().any(|tag| matches!(tag, DocTag::InheritDoc)) {
+            self.inherited_docs_for_span(span).or(Some(own))
+        } else {
+            Some(own)
+        }
+    }
+
+    pub fn docs(&self) -> impl Iterator<Item = &Comment> {
+        self.comments.iter().filter(|comment| comment.kind.is_doc())
+    }
+
+    pub fn leading_trivia(&self, span: Span) -> Vec<&Comment> {
+        self.comments
+            .iter()
+            .filter(|comment| {
+                comment.span.end <= span.start && same_or_adjacent_line(comment, span, &self.source)
+            })
+            .collect()
+    }
+
+    pub fn trailing_trivia(&self, span: Span) -> Vec<&Comment> {
+        self.comments
+            .iter()
+            .filter(|comment| {
+                comment.span.start >= span.end
+                    && same_line(span.end, comment.span.start, &self.source)
+            })
+            .collect()
+    }
+}
+
+/// Apply the deterministic source formatter used by the CLI. It only removes
+/// trailing horizontal whitespace, preserving comments, line endings, and
+/// blank-line structure.
+pub fn format_source(source: &str) -> String {
+    source
+        .split_inclusive('\n')
+        .map(|line| {
+            if let Some(content) = line.strip_suffix('\n') {
+                let (body, carriage_return) = content
+                    .strip_suffix('\r')
+                    .map_or((content, ""), |body| (body, "\r"));
+                format!(
+                    "{}{}\n",
+                    body.trim_end_matches([' ', '\t']),
+                    carriage_return
+                )
+            } else {
+                line.trim_end_matches([' ', '\t']).to_owned()
+            }
+        })
+        .collect()
+}
+
+impl<T> Spanned<T> {
+    pub fn leading_trivia<'a>(&self, program: &'a Program) -> Vec<&'a Comment> {
+        program.leading_trivia(self.span)
+    }
+
+    pub fn trailing_trivia<'a>(&self, program: &'a Program) -> Vec<&'a Comment> {
+        program.trailing_trivia(self.span)
+    }
+
+    pub fn docs<'a>(&self, program: &'a Program) -> Vec<&'a Comment> {
+        self.leading_trivia(program)
+            .into_iter()
+            .filter(|comment| comment.kind.is_doc())
+            .collect()
+    }
+}
+
+fn line_at(source: &str, offset: usize) -> usize {
+    source[..offset.min(source.len())]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1
+}
+
+fn same_line(left: usize, right: usize, source: &str) -> bool {
+    line_at(source, left) == line_at(source, right)
+}
+
+fn same_or_adjacent_line(comment: &Comment, span: Span, source: &str) -> bool {
+    comment.line_end + 1 >= line_at(source, span.start)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -453,8 +971,18 @@ impl fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 pub fn parse(source: &str) -> Result<Program, ParseError> {
-    let tokens = lex(source)?;
-    Parser { tokens, pos: 0 }.program()
+    let lexed = lex(source)?;
+    let mut program = Parser {
+        tokens: lexed.tokens,
+        pos: 0,
+    }
+    .program()?;
+    program.source = source.to_owned();
+    program.bom = lexed.bom;
+    program.shebang = lexed.shebang;
+    program.comments = lexed.comments;
+    program.lints = collect_comment_lints(&program);
+    Ok(program)
 }
 
 fn numeric_body(value: &str) -> &str {
@@ -489,11 +1017,31 @@ fn parse_float_literal(value: &str) -> f64 {
         .unwrap_or_default()
 }
 
-fn lex(source: &str) -> Result<Vec<Token>, ParseError> {
+struct Lexed {
+    tokens: Vec<Token>,
+    comments: Vec<Comment>,
+    shebang: Option<Comment>,
+    bom: bool,
+}
+
+fn lex(source: &str) -> Result<Lexed, ParseError> {
     let bytes = source.as_bytes();
-    let mut i = 0;
+    let bom = source.starts_with('\u{feff}');
+    let mut i = if bom { '\u{feff}'.len_utf8() } else { 0 };
     let mut out = Vec::new();
+    let comments = scan_comments(source, i)?;
+    let shebang = comments
+        .iter()
+        .find(|comment| comment.kind == CommentKind::Shebang)
+        .cloned();
     'lex: while i < bytes.len() {
+        if i == if bom { '\u{feff}'.len_utf8() } else { 0 }
+            && bytes.get(i) == Some(&b'#')
+            && bytes.get(i + 1) == Some(&b'!')
+        {
+            i = line_end(bytes, i);
+            continue;
+        }
         if bytes[i].is_ascii_whitespace() {
             i += 1;
             continue;
@@ -503,6 +1051,10 @@ fn lex(source: &str) -> Result<Vec<Token>, ParseError> {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }
+            continue;
+        }
+        if bytes[i] == b'/' && bytes.get(i + 1) == Some(&b'*') {
+            i = skip_block_comment(source, i)?;
             continue;
         }
         let start = i;
@@ -790,6 +1342,14 @@ fn lex(source: &str) -> Result<Vec<Token>, ParseError> {
             });
             continue;
         }
+        if c == '|' && bytes.get(i) == Some(&b'|') {
+            i += 1;
+            out.push(Token {
+                kind: TokenKind::Operator("||".into()),
+                span: Span { start, end: i },
+            });
+            continue;
+        }
         if c == '.' && bytes.get(i) == Some(&b'.') {
             i += 1;
             let inclusive = bytes.get(i) == Some(&b'=');
@@ -829,7 +1389,610 @@ fn lex(source: &str) -> Result<Vec<Token>, ParseError> {
             end: source.len(),
         },
     });
-    Ok(out)
+    Ok(Lexed {
+        tokens: out,
+        comments,
+        shebang,
+        bom,
+    })
+}
+
+fn skip_block_comment(source: &str, start: usize) -> Result<usize, ParseError> {
+    let bytes = source.as_bytes();
+    let mut depth = 1usize;
+    let mut i = start + 2;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            depth += 1;
+            i += 2;
+        } else if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+            depth -= 1;
+            i += 2;
+            if depth == 0 {
+                return Ok(i);
+            }
+        } else {
+            i += 1;
+        }
+    }
+    Err(ParseError {
+        message: "unterminated block comment".into(),
+        span: Span {
+            start,
+            end: source.len(),
+        },
+    })
+}
+
+fn scan_comments(source: &str, start: usize) -> Result<Vec<Comment>, ParseError> {
+    let bytes = source.as_bytes();
+    let mut comments = Vec::new();
+    let mut i = start;
+    let mut quote = None;
+    let mut escaped = false;
+    while i < bytes.len() {
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+            } else if bytes[i] == b'\\' {
+                escaped = true;
+            } else if bytes[i] == active_quote {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'"' || bytes[i] == b'\'' {
+            quote = Some(bytes[i]);
+            i += 1;
+            continue;
+        }
+        if i == start && bytes.get(i) == Some(&b'#') && bytes.get(i + 1) == Some(&b'!') {
+            let end = line_end(bytes, i);
+            comments.push(make_comment(source, CommentKind::Shebang, i, end));
+            i = end;
+            continue;
+        }
+        if bytes[i] == b'/' && bytes.get(i + 1) == Some(&b'/') {
+            let end = line_end(bytes, i);
+            let kind = if bytes.get(i + 2) == Some(&b'!') {
+                CommentKind::InnerDocLine
+            } else if bytes.get(i + 2) == Some(&b'/') && bytes.get(i + 3) != Some(&b'/') {
+                CommentKind::OuterDocLine
+            } else {
+                CommentKind::Line
+            };
+            comments.push(make_comment(source, kind, i, end));
+            i = end;
+            continue;
+        }
+        if bytes[i] == b'/' && bytes.get(i + 1) == Some(&b'*') {
+            let end = skip_block_comment(source, i)?;
+            let raw = &source[i..end];
+            let kind = if raw == "/**/" || raw == "/***/" {
+                CommentKind::Block
+            } else if raw.starts_with("/*!") {
+                CommentKind::InnerDocBlock
+            } else if raw.starts_with("/**") {
+                CommentKind::OuterDocBlock
+            } else {
+                CommentKind::Block
+            };
+            comments.push(make_comment(source, kind, i, end));
+            i = end;
+            continue;
+        }
+        i += 1;
+    }
+    Ok(comments)
+}
+
+fn line_end(bytes: &[u8], start: usize) -> usize {
+    bytes[start..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(bytes.len(), |offset| start + offset)
+}
+
+fn make_comment(source: &str, kind: CommentKind, start: usize, end: usize) -> Comment {
+    Comment {
+        kind,
+        text: source[start..end].to_owned(),
+        span: Span { start, end },
+        line_start: line_at(source, start),
+        line_end: line_at(source, end),
+    }
+}
+
+fn documentation_target_spans(item: &Spanned<Item>, spans: &mut Vec<Span>) {
+    spans.push(item.span);
+    match &item.node {
+        Item::Class(value) => {
+            spans.extend(value.fields.iter().map(|field| field.span));
+            spans.extend(value.methods.iter().map(|method| method.span));
+            spans.extend(
+                value
+                    .constructors
+                    .iter()
+                    .map(|constructor| constructor.span),
+            );
+        }
+        Item::Interface(value) => spans.extend(value.methods.iter().map(|method| method.span)),
+        Item::Enum(value) => spans.extend(value.variants.iter().map(|variant| variant.span)),
+        Item::Error(value) => spans.extend(value.cases.iter().map(|case| case.span)),
+        Item::Extension(value) => spans.extend(value.methods.iter().map(|method| method.span)),
+        Item::Function(_) | Item::TypeAlias(_) | Item::Newtype(_) => {}
+    }
+}
+
+fn collect_comment_lints(program: &Program) -> Vec<Lint> {
+    collect_comment_lints_with_context(program, None, None)
+}
+
+fn collect_comment_lints_with_context(
+    program: &Program,
+    package_version: Option<Vec<u64>>,
+    first_release: Option<Vec<u64>>,
+) -> Vec<Lint> {
+    let mut target_spans = Vec::new();
+    for item in &program.items {
+        documentation_target_spans(item, &mut target_spans);
+    }
+    let mut lints = Vec::new();
+    if !program.source.contains("orust:allow(OR0616)") {
+        let marker = "orust:allow(";
+        for (start, _) in program.source.match_indices(marker) {
+            let rest = &program.source[start + marker.len()..];
+            let Some(end) = rest.find(')') else {
+                continue;
+            };
+            let code = &rest[..end];
+            if code.starts_with("OR") && !is_known_doc_lint(code) {
+                lints.push(Lint {
+                    code: "OR0616",
+                    message: format!("unknown suppression code {code}"),
+                    severity: LintSeverity::Warning,
+                    span: Span {
+                        start,
+                        end: start + marker.len() + end + 1,
+                    },
+                });
+            }
+        }
+    }
+    lints.extend(
+        program
+            .comments
+            .iter()
+            .filter(|comment| comment.kind.is_outer_doc())
+            .filter(|comment| {
+                !program.comments.iter().any(|next| {
+                    next.kind == comment.kind
+                        && next.span.start > comment.span.end
+                        && next.line_start <= comment.line_end + 1
+                })
+            })
+            .filter(|comment| {
+                !target_spans.iter().any(|span| {
+                    span.start > comment.span.end
+                        && line_at(&program.source, span.start) <= comment.line_end + 1
+                })
+            })
+            .map(|comment| Lint {
+                code: "OR0601",
+                message: "outer documentation comment has no declaration target".into(),
+                severity: LintSeverity::Warning,
+                span: comment.span,
+            })
+            .collect::<Vec<_>>(),
+    );
+    let unknown_suppressed = program.source.contains("orust:allow(OR0603)");
+    if !unknown_suppressed {
+        for comment in &program.comments {
+            let Some(doc) = comment.doc_block() else {
+                continue;
+            };
+            for tag in doc.tags {
+                if let DocTag::Unknown { name, .. } = tag {
+                    let suggestion = suggest_doc_tag(&name)
+                        .map(|value| format!(", did you mean @{value}?"))
+                        .unwrap_or_default();
+                    lints.push(Lint {
+                        code: "OR0603",
+                        message: format!("unknown doc tag @{name}{suggestion}"),
+                        severity: LintSeverity::Warning,
+                        span: comment.span,
+                    });
+                }
+            }
+        }
+    }
+    if program.source.contains("orust:allow(OR0601)") {
+        lints.retain(|lint| lint.code != "OR0601");
+    }
+    for item in &program.items {
+        let doc = program.docs_for_span(item.span);
+        if item_is_exported(&item.node)
+            && doc.is_none()
+            && !program.source.contains("orust:allow(OR0606)")
+        {
+            lints.push(Lint {
+                code: "OR0606",
+                message: "exported item is missing documentation".into(),
+                severity: LintSeverity::Warning,
+                span: item.span,
+            });
+        }
+        let Some(doc) = doc else {
+            continue;
+        };
+        let suppressed = |code: &str| program.source.contains(&format!("orust:allow({code})"));
+        let Item::Function(function) = &item.node else {
+            continue;
+        };
+        let params = doc
+            .tags
+            .iter()
+            .filter_map(|tag| match tag {
+                DocTag::Param { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !suppressed("OR0607")
+            && (!params.is_empty()
+                && (params
+                    .iter()
+                    .any(|name| !function.params.iter().any(|param| &param.name == name))
+                    || function
+                        .params
+                        .iter()
+                        .any(|param| !params.contains(&param.name.as_str()))))
+        {
+            lints.push(Lint {
+                code: "OR0607",
+                message: "documentation parameters do not match the function parameters".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+        let throws = doc
+            .tags
+            .iter()
+            .filter_map(|tag| match tag {
+                DocTag::Throws { ty, .. } => Some(ty.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !suppressed("OR0608")
+            && ((function.throws_type.is_some() && throws.is_empty())
+                || throws
+                    .iter()
+                    .any(|ty| Some(*ty) != function.throws_type.as_deref()))
+        {
+            lints.push(Lint {
+                code: "OR0608",
+                message: "documentation errors do not match the function throws type".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+        if !suppressed("OR0609")
+            && matches!(function.return_type.as_str(), "void" | "()")
+            && doc.tags.iter().any(|tag| matches!(tag, DocTag::Returns(_)))
+        {
+            lints.push(Lint {
+                code: "OR0609",
+                message: "@returns documents a function with no return value".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+    }
+    let item_names = program
+        .items
+        .iter()
+        .filter_map(|item| match &item.node {
+            Item::Class(value) => Some(value.name.as_str()),
+            Item::Function(value) => Some(value.name.as_str()),
+            Item::Interface(value) => Some(value.name.as_str()),
+            Item::Enum(value) => Some(value.name.as_str()),
+            Item::Error(value) => Some(value.name.as_str()),
+            Item::TypeAlias(value) => Some(value.name.as_str()),
+            Item::Newtype(value) => Some(value.name.as_str()),
+            Item::Extension(_) => None,
+        })
+        .collect::<Vec<_>>();
+    for doc in program.doc_blocks() {
+        let suppressed = |code: &str| program.source.contains(&format!("orust:allow({code})"));
+        let count =
+            |predicate: fn(&DocTag) -> bool| doc.tags.iter().filter(|tag| predicate(tag)).count();
+        let has_resolved_inheritance = target_spans.iter().any(|target| {
+            program
+                .docs_for_span(*target)
+                .is_some_and(|candidate| candidate.span == doc.span)
+                && program.inherited_docs_for_span(*target).is_some()
+        });
+        if !suppressed("OR0602")
+            && doc.tags.iter().any(|tag| matches!(tag, DocTag::InheritDoc))
+            && !has_resolved_inheritance
+        {
+            lints.push(Lint {
+                code: "OR0602",
+                message: "@inheritDoc has no resolvable parent documentation".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+        let links = doc.tags.iter().filter_map(|tag| match tag {
+            DocTag::See(value) => Some(value.as_str()),
+            _ => None,
+        });
+        if !suppressed("OR0604")
+            && links.clone().any(|link| {
+                link.trim_matches(&['[', ']', '`'][..])
+                    .split_once('.')
+                    .is_some_and(|(name, _)| !item_names.contains(&name))
+            })
+        {
+            lints.push(Lint {
+                code: "OR0604",
+                message: "documentation link does not resolve to an ORust item".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+        if !suppressed("OR0605")
+            && doc
+                .tags
+                .iter()
+                .any(|tag| matches!(tag, DocTag::Example { code, .. } if code.contains("std:http")))
+        {
+            lints.push(Lint {
+                code: "OR0605",
+                message: "doctest uses a network feature without `no_run` or `ignore`".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+        if !suppressed("OR0612")
+            && [
+                count(|tag| matches!(tag, DocTag::Since(_))) > 1,
+                count(|tag| matches!(tag, DocTag::Version(_))) > 1,
+                count(|tag| matches!(tag, DocTag::Returns(_))) > 1,
+            ]
+            .into_iter()
+            .any(|value| value)
+        {
+            lints.push(Lint {
+                code: "OR0612",
+                message: "documentation tag may appear only once".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+        if !suppressed("OR0613") && !doc.tags.is_empty() && doc.summary.is_empty() {
+            lints.push(Lint {
+                code: "OR0613",
+                message: "documentation is empty after removing tags".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+        if !suppressed("OR0610") {
+            for tag in &doc.tags {
+                let DocTag::Since(value) = tag else {
+                    continue;
+                };
+                let Some(since) = parse_version(value) else {
+                    continue;
+                };
+                let too_new = package_version
+                    .as_ref()
+                    .is_some_and(|package| since > *package);
+                let too_old = first_release
+                    .as_ref()
+                    .is_some_and(|release| since < *release);
+                if too_new || too_old {
+                    lints.push(Lint {
+                        code: "OR0610",
+                        message: format!("@since {value} is outside the package release range"),
+                        severity: LintSeverity::Warning,
+                        span: doc.span,
+                    });
+                }
+            }
+        }
+        if !suppressed("OR0614")
+            && (program.source.contains("orust:deny(OR0614)")
+                || program.source.contains("orust:warn(OR0614)"))
+            && (doc.summary.chars().count() > 120
+                || (!doc.summary.is_empty() && !doc.summary.trim_end().ends_with(['.', '!', '?'])))
+        {
+            lints.push(Lint {
+                code: "OR0614",
+                message: "summary is too long or does not end as a sentence".into(),
+                severity: LintSeverity::Warning,
+                span: doc.span,
+            });
+        }
+    }
+    if !program.source.contains("orust:allow(OR0611)") {
+        for (name, span) in deprecated_item_names(program) {
+            if source_uses_deprecated_name(program, &name) {
+                lints.push(Lint {
+                    code: "OR0611",
+                    message: format!("`{name}` is deprecated and is still used in this package"),
+                    severity: LintSeverity::Warning,
+                    span,
+                });
+            }
+        }
+    }
+    if !program.source.contains("orust:allow(OR0615)") {
+        for comment in &program.comments {
+            if comment.kind == CommentKind::Line
+                && ["TODO", "FIXME", "HACK", "XXX"]
+                    .iter()
+                    .any(|marker| comment.text.contains(marker))
+            {
+                lints.push(Lint {
+                    code: "OR0615",
+                    message: "work marker comment is present".into(),
+                    severity: LintSeverity::Warning,
+                    span: comment.span,
+                });
+            }
+        }
+    }
+    lints.sort_by_key(|lint| (lint.span.start, lint.code));
+    lints
+}
+
+fn parse_version(value: &str) -> Option<Vec<u64>> {
+    let value = value.trim().trim_start_matches('v');
+    let value = value.split_once('-').map_or(value, |(base, _)| base);
+    let parts = value.split('.').collect::<Vec<_>>();
+    (!parts.is_empty() && parts.iter().all(|part| part.parse::<u64>().is_ok())).then(|| {
+        parts
+            .into_iter()
+            .map(|part| part.parse().unwrap())
+            .collect()
+    })
+}
+
+fn suggest_doc_tag(name: &str) -> Option<&'static str> {
+    const TAGS: &[&str] = &[
+        "author",
+        "param",
+        "typeParam",
+        "returns",
+        "throws",
+        "panics",
+        "example",
+        "see",
+        "since",
+        "deprecated",
+        "version",
+        "todo",
+        "note",
+        "warning",
+        "internal",
+        "category",
+        "inheritDoc",
+        "license",
+        "copyright",
+    ];
+    TAGS.iter()
+        .copied()
+        .map(|candidate| (edit_distance(name, candidate), candidate))
+        .filter(|(distance, _)| *distance <= 3)
+        .min_by_key(|(distance, candidate)| (*distance, *candidate))
+        .map(|(_, candidate)| candidate)
+}
+
+fn edit_distance(left: &str, right: &str) -> usize {
+    let mut row = (0..=right.chars().count()).collect::<Vec<_>>();
+    for (left_index, left_char) in left.chars().enumerate() {
+        let mut next = vec![left_index + 1];
+        for (right_index, right_char) in right.chars().enumerate() {
+            let substitution = row[right_index] + usize::from(left_char != right_char);
+            next.push(
+                (substitution)
+                    .min(row[right_index + 1] + 1)
+                    .min(next[right_index] + 1),
+            );
+        }
+        row = next;
+    }
+    *row.last().unwrap_or(&0)
+}
+
+fn deprecated_item_names(program: &Program) -> Vec<(String, Span)> {
+    let mut result = Vec::new();
+    for item in &program.items {
+        if program.docs_for_span(item.span).is_some_and(|doc| {
+            doc.tags
+                .iter()
+                .any(|tag| matches!(tag, DocTag::Deprecated { .. }))
+        }) {
+            if let Some(name) = item_name(&item.node) {
+                result.push((name.to_owned(), item.span));
+            }
+        }
+        if let Item::Class(class) = &item.node {
+            for method in &class.methods {
+                if program.docs_for_span(method.span).is_some_and(|doc| {
+                    doc.tags
+                        .iter()
+                        .any(|tag| matches!(tag, DocTag::Deprecated { .. }))
+                }) {
+                    result.push((method.name.clone(), method.span));
+                }
+            }
+        }
+    }
+    result
+}
+
+fn item_name(item: &Item) -> Option<&str> {
+    match item {
+        Item::Class(value) => Some(&value.name),
+        Item::Function(value) => Some(&value.name),
+        Item::Interface(value) => Some(&value.name),
+        Item::Enum(value) => Some(&value.name),
+        Item::Error(value) => Some(&value.name),
+        Item::TypeAlias(value) => Some(&value.name),
+        Item::Newtype(value) => Some(&value.name),
+        Item::Extension(_) => None,
+    }
+}
+
+fn source_uses_deprecated_name(program: &Program, name: &str) -> bool {
+    let needle = format!("{name}(");
+    program.source.lines().any(|line| {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//") || trimmed.starts_with('*') {
+            return false;
+        }
+        line.contains(&needle)
+            && !trimmed.starts_with(&format!("void {name}"))
+            && !trimmed.starts_with(&format!("async void {name}"))
+    })
+}
+
+fn is_known_doc_lint(code: &str) -> bool {
+    matches!(
+        code,
+        "OR0601"
+            | "OR0602"
+            | "OR0603"
+            | "OR0604"
+            | "OR0605"
+            | "OR0606"
+            | "OR0607"
+            | "OR0608"
+            | "OR0609"
+            | "OR0610"
+            | "OR0611"
+            | "OR0612"
+            | "OR0613"
+            | "OR0614"
+            | "OR0615"
+            | "OR0616"
+    )
+}
+
+fn item_is_exported(item: &Item) -> bool {
+    match item {
+        Item::Class(value) => value.exported,
+        Item::Function(value) => value.exported,
+        Item::Interface(value) => value.exported,
+        Item::Enum(value) => value.exported,
+        Item::Error(value) => value.exported,
+        Item::Extension(value) => value.exported,
+        Item::TypeAlias(value) => value.exported,
+        Item::Newtype(value) => value.exported,
+    }
 }
 
 struct Parser {
@@ -901,6 +2064,19 @@ impl Parser {
         if self.is(&kind) {
             Ok(self.bump())
         } else {
+            if matches!(kind, TokenKind::Symbol(';'))
+                && self.is(&TokenKind::Symbol('}'))
+                && self.pos > 0
+            {
+                let previous_end = self.tokens[self.pos - 1].span.end;
+                return Err(ParseError {
+                    message: "expected Symbol(';') before closing `}`; add `;` to finish the previous statement".into(),
+                    span: Span {
+                        start: previous_end,
+                        end: previous_end,
+                    },
+                });
+            }
             Err(ParseError {
                 message: format!("expected {:?}, found {:?}", kind, self.current().kind),
                 span: self.current().span,
@@ -1476,6 +2652,11 @@ impl Parser {
             attributes.push(item_attributes);
         }
         Ok(Program {
+            source: String::new(),
+            bom: false,
+            shebang: None,
+            comments: Vec::new(),
+            lints: Vec::new(),
             imports,
             exports,
             rust_uses,
@@ -1687,18 +2868,22 @@ impl Parser {
                 method.visibility = visibility;
                 methods.push(method);
             } else {
+                let declaration_start = self.current().span.start;
                 let initializer = if self.is(&TokenKind::Operator("=".into())) {
                     self.bump();
                     Some(self.expr()?)
                 } else {
                     None
                 };
-                self.expect(TokenKind::Symbol(';'))?;
+                let declaration_end = self.expect(TokenKind::Symbol(';'))?.span.end;
                 fields.push(Field {
                     ty: return_type,
                     name: member,
                     initializer,
-                    span: self.current().span,
+                    span: Span {
+                        start: declaration_start,
+                        end: declaration_end,
+                    },
                     visibility,
                 });
             }
@@ -3017,6 +4202,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn parses_a_class_and_preserves_spans() {
@@ -3043,6 +4229,44 @@ mod tests {
     fn reports_missing_semicolons() {
         let error = parse("void main() { print(1) }").unwrap_err();
         assert!(error.message.contains("expected Symbol(';')"));
+        assert!(error.message.contains("before closing"));
+        assert_eq!(error.span.start, "void main() { print(1)".len());
+        assert_eq!(error.span.end, error.span.start);
+    }
+
+    #[test]
+    fn comments_preserve_error_line_mapping() {
+        let plain = "void main() { print(1) }\n";
+        let with_prefix = "// explanation\nvoid main() { print(1) }\n";
+        let with_inline = "void main() { print(1 /* explanation */) }\n";
+        let line = |source: &str, offset: usize| {
+            source[..offset]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1
+        };
+        let plain_error = parse(plain).unwrap_err();
+        let prefix_error = parse(with_prefix).unwrap_err();
+        let inline_error = parse(with_inline).unwrap_err();
+        assert_eq!(line(plain, plain_error.span.start), 1);
+        assert_eq!(line(with_prefix, prefix_error.span.start), 2);
+        assert_eq!(line(with_inline, inline_error.span.start), 1);
+    }
+
+    #[test]
+    fn one_hundred_inserted_comment_lines_shift_errors_exactly() {
+        let source = (0..100)
+            .map(|index| format!("// generated-{index}\n"))
+            .collect::<String>()
+            + "void main() {\n  print(1)\n}\n";
+        let error = parse(&source).unwrap_err();
+        let line = source[..error.span.start]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
+        assert_eq!(line, 102);
     }
 
     #[test]
@@ -3718,5 +4942,515 @@ mod tests {
         assert!(error
             .message
             .contains("declares constructor `new` more than once"));
+    }
+
+    #[test]
+    fn preserves_comment_kinds_and_exact_source() {
+        let source = "\u{feff}#!/usr/bin/env orust\r\n/// outer\r\nclass User {} // trailing\r\n/** block */\r\n//! inner\r\n/*! inner block */\r\n//// plain\r\n/**/ /***/\r\n";
+        let program = parse(source).unwrap();
+        assert_eq!(program.source, source);
+        assert!(program.bom);
+        assert_eq!(
+            program.shebang.as_ref().unwrap().text,
+            "#!/usr/bin/env orust\r"
+        );
+        assert_eq!(program.comments.len(), 9);
+        assert_eq!(
+            program
+                .comments
+                .iter()
+                .map(|comment| comment.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                CommentKind::Shebang,
+                CommentKind::OuterDocLine,
+                CommentKind::Line,
+                CommentKind::OuterDocBlock,
+                CommentKind::InnerDocLine,
+                CommentKind::InnerDocBlock,
+                CommentKind::Line,
+                CommentKind::Block,
+                CommentKind::Block,
+            ]
+        );
+        assert_eq!(program.docs().count(), 4);
+        assert_eq!(program.lints.len(), 1);
+        assert_eq!(program.lints[0].code, "OR0601");
+    }
+
+    #[test]
+    fn supports_nested_block_comments_and_non_ascii_text() {
+        let program = parse("/* наружный /* вложенный */ комментарий */ class User {}").unwrap();
+        assert_eq!(program.comments.len(), 1);
+        assert_eq!(program.comments[0].kind, CommentKind::Block);
+        assert!(program.comments[0].text.contains("наружный"));
+        assert!(parse("class User {} /* unterminated /* nested */").is_err());
+    }
+
+    #[test]
+    fn attaches_adjacent_comments_as_trivia_and_warns_for_detached_docs() {
+        let program = parse("/// User docs\nclass User {} // after\n\n/// orphan\n\n").unwrap();
+        let item = &program.items[0];
+        assert_eq!(item.docs(&program).len(), 1);
+        assert_eq!(item.trailing_trivia(&program).len(), 1);
+        assert_eq!(program.lints.len(), 1);
+        assert_eq!(program.lints[0].code, "OR0601");
+    }
+
+    #[test]
+    fn comments_inside_expressions_do_not_change_parsing() {
+        let plain = parse("void main() { print(1); }").unwrap();
+        let commented = parse("void main() { print(/* first */ 1 /* second */); }").unwrap();
+        assert!(matches!(plain.items[0].node, Item::Function(_)));
+        assert!(matches!(commented.items[0].node, Item::Function(_)));
+        assert_eq!(commented.comments.len(), 2);
+    }
+
+    #[test]
+    fn parses_doc_tags_without_losing_unknown_text() {
+        let doc = Comment {
+            kind: CommentKind::OuterDocLine,
+            text: "/// Summary\n///\n/// Details.\n/// @author Ada Lovelace <ada@example.com> (https://ada.dev)\n/// @param value the value\n/// @returns the result\n/// @throws Error when it fails\n/// @deprecated since 0.3.0 Use the new API.\n/// @unknown preserved text".into(),
+            span: Span { start: 0, end: 300 },
+            line_start: 1,
+            line_end: 9,
+        };
+        let parsed = doc.doc_block().unwrap();
+        assert_eq!(parsed.raw, doc.text);
+        assert_eq!(parsed.summary, "Summary");
+        assert!(
+            matches!(parsed.tags[0], DocTag::Author { ref name, ref email, ref url } if name == "Ada Lovelace" && email.as_deref() == Some("ada@example.com") && url.as_deref() == Some("https://ada.dev"))
+        );
+        assert!(matches!(parsed.tags[1], DocTag::Param { ref name, .. } if name == "value"));
+        assert!(matches!(parsed.tags[2], DocTag::Returns(ref value) if value == "the result"));
+        assert!(matches!(parsed.tags[3], DocTag::Throws { ref ty, .. } if ty == "Error"));
+        assert!(
+            matches!(parsed.tags[4], DocTag::Deprecated { ref since, .. } if since.as_deref() == Some("0.3.0"))
+        );
+        assert!(
+            matches!(parsed.tags[5], DocTag::Unknown { ref name, ref text } if name == "unknown" && text == "preserved text")
+        );
+    }
+
+    #[test]
+    fn covers_every_documentation_tag_row() {
+        let source = concat!(
+            "/// Summary.\n",
+            "/// @author Ada <ada@example.com> (https://ada.dev)\n",
+            "/// @param value the value\n",
+            "/// @typeParam T the type\n",
+            "/// @returns the result\n",
+            "/// @throws Error when invalid\n",
+            "/// @panics when impossible\n",
+            "/// @example demo\n",
+            "/// ```orust\n",
+            "/// print(1);\n",
+            "/// ```\n",
+            "/// @see Other\n",
+            "/// @since 1.0\n",
+            "/// @deprecated 2.0 use Other\n",
+            "/// @version 1.2\n",
+            "/// @todo finish\n",
+            "/// @note note\n",
+            "/// @warning warning\n",
+            "/// @internal\n",
+            "/// @category api\n",
+            "/// @inheritDoc\n",
+            "/// @license MIT\n",
+            "/// @copyright 2026\n",
+            "/// @future preserved\n",
+        );
+        let parsed = DocBlock::parse(
+            source,
+            Span {
+                start: 0,
+                end: source.len(),
+            },
+        );
+        assert_eq!(parsed.tags.len(), 20);
+        assert!(matches!(parsed.tags[0], DocTag::Author { .. }));
+        assert!(matches!(parsed.tags[1], DocTag::Param { .. }));
+        assert!(matches!(parsed.tags[2], DocTag::TypeParam { .. }));
+        assert!(matches!(parsed.tags[3], DocTag::Returns(_)));
+        assert!(matches!(parsed.tags[4], DocTag::Throws { .. }));
+        assert!(matches!(parsed.tags[5], DocTag::Panics(_)));
+        assert!(matches!(parsed.tags[6], DocTag::Example { .. }));
+        assert!(matches!(parsed.tags[7], DocTag::See(_)));
+        assert!(matches!(parsed.tags[8], DocTag::Since(_)));
+        assert!(matches!(parsed.tags[9], DocTag::Deprecated { .. }));
+        assert!(matches!(parsed.tags[10], DocTag::Version(_)));
+        assert!(matches!(parsed.tags[11], DocTag::Todo(_)));
+        assert!(matches!(parsed.tags[12], DocTag::Note(_)));
+        assert!(matches!(parsed.tags[13], DocTag::Warning(_)));
+        assert!(matches!(parsed.tags[14], DocTag::Internal));
+        assert!(matches!(parsed.tags[15], DocTag::Category(_)));
+        assert!(matches!(parsed.tags[16], DocTag::InheritDoc));
+        assert!(matches!(parsed.tags[17], DocTag::License(_)));
+        assert!(matches!(parsed.tags[18], DocTag::Copyright(_)));
+        assert!(matches!(parsed.tags[19], DocTag::Unknown { .. }));
+        assert_eq!(parsed.raw, source);
+    }
+
+    #[test]
+    fn doc_parser_handles_fences_and_arbitrary_delimiters() {
+        let parsed = DocBlock::parse(
+            "/// text with @not-a-tag\n/// ```orust\n/// @inside-code\n/// ```\n/// @example demo\n/// ```orust\n/// print(1);\n/// ```",
+            Span { start: 4, end: 80 },
+        );
+        assert_eq!(parsed.tags.len(), 1);
+        assert!(
+            matches!(parsed.tags[0], DocTag::Example { ref title, .. } if title.as_deref() == Some("demo"))
+        );
+        for value in ["", "@", "@ ", "```", "/*", "😀 @unknown text", "\n\n\n"] {
+            let _ = DocBlock::parse(
+                value,
+                Span {
+                    start: 0,
+                    end: value.len(),
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn lossless_source_survives_deterministic_comment_insertions() {
+        let base = "void main() { print(1); }\n";
+        for index in 0..100 {
+            let source = format!("// generated comment {index}\n{base}");
+            let program = parse(&source).unwrap();
+            assert_eq!(program.lossless_source(), source);
+            assert_eq!(program.items.len(), 1);
+        }
+    }
+
+    #[test]
+    fn unknown_doc_tags_have_clean_and_suppressed_cases() {
+        let failing = parse("/// @authro Ada\nclass User {}").unwrap();
+        assert!(failing
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0603" && lint.message.contains("did you mean @author")));
+        let clean = parse("/// @author Ada\nclass User {}").unwrap();
+        assert!(!clean.lints.iter().any(|lint| lint.code == "OR0603"));
+        let suppressed = parse("// orust:allow(OR0603)\n/// @authro Ada\nclass User {}").unwrap();
+        assert!(!suppressed.lints.iter().any(|lint| lint.code == "OR0603"));
+    }
+
+    #[test]
+    fn orphan_doc_lint_has_a_suppression_case() {
+        let failing = parse("/// orphan\n\n").unwrap();
+        assert!(failing.lints.iter().any(|lint| lint.code == "OR0601"));
+        let clean = parse("/// attached\nclass User {}").unwrap();
+        assert!(!clean.lints.iter().any(|lint| lint.code == "OR0601"));
+        let suppressed = parse("// orust:allow(OR0601)\n/// orphan\n\n").unwrap();
+        assert!(!suppressed.lints.iter().any(|lint| lint.code == "OR0601"));
+    }
+
+    #[test]
+    fn groups_line_doc_comments_into_one_example_block() {
+        let program = parse(
+            "/// Demo\n/// @example smoke\n/// ```orust\n/// print(1);\n/// ```\nvoid main() {}",
+        )
+        .unwrap();
+        let blocks = program.doc_blocks();
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(
+            &blocks[0].tags[0],
+            DocTag::Example { code, .. } if code == "print(1);"
+        ));
+    }
+
+    #[test]
+    fn signature_doc_lints_have_failing_clean_and_suppressed_cases() {
+        let mismatch = parse("/// docs\n/// @param missing value\nvoid run(int value) {}").unwrap();
+        assert!(mismatch.lints.iter().any(|lint| lint.code == "OR0607"));
+        let clean = parse("/// docs\n/// @param value input\nvoid run(int value) {}").unwrap();
+        assert!(!clean.lints.iter().any(|lint| lint.code == "OR0607"));
+        let suppressed = parse(
+            "// orust:allow(OR0607)\n/// docs\n/// @param missing value\nvoid run(int value) {}",
+        )
+        .unwrap();
+        assert!(!suppressed.lints.iter().any(|lint| lint.code == "OR0607"));
+
+        let throws_mismatch = parse(
+            "/// docs\n/// @throws Other fails\nString run() throws Error { return \"ok\"; }",
+        )
+        .unwrap();
+        assert!(throws_mismatch
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0608"));
+        let throws_clean = parse(
+            "/// docs\n/// @throws Error fails\nString run() throws Error { return \"ok\"; }",
+        )
+        .unwrap();
+        assert!(!throws_clean.lints.iter().any(|lint| lint.code == "OR0608"));
+        let throws_suppressed =
+            parse("// orust:allow(OR0608)\n/// docs\nString run() throws Error { return \"ok\"; }")
+                .unwrap();
+        assert!(!throws_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0608"));
+
+        let returns_mismatch = parse("/// docs\n/// @returns value\nvoid run() {}").unwrap();
+        assert!(returns_mismatch
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0609"));
+        let returns_clean = parse("/// docs\nvoid run() {}").unwrap();
+        assert!(!returns_clean.lints.iter().any(|lint| lint.code == "OR0609"));
+        let returns_suppressed =
+            parse("// orust:allow(OR0609)\n/// docs\n/// @returns value\nvoid run() {}").unwrap();
+        assert!(!returns_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0609"));
+    }
+
+    #[test]
+    fn remaining_documentation_lints_have_failing_clean_and_suppressed_cases() {
+        let unknown_suppression = parse("// orust:allow(OR0999)\nclass User {}").unwrap();
+        assert!(unknown_suppression
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0616"));
+        let known_suppression = parse("// orust:allow(OR0601)\nclass User {}").unwrap();
+        assert!(!known_suppression
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0616"));
+        let suppression_suppressed =
+            parse("// orust:allow(OR0616)\n// orust:allow(OR0999)\nclass User {}").unwrap();
+        assert!(!suppression_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0616"));
+
+        let missing = parse("export void public_api() {}").unwrap();
+        assert!(missing.lints.iter().any(|lint| lint.code == "OR0606"));
+        let documented = parse("/// Public API.\nexport void public_api() {}").unwrap();
+        assert!(!documented.lints.iter().any(|lint| lint.code == "OR0606"));
+        let missing_suppressed =
+            parse("// orust:allow(OR0606)\nexport void public_api() {}").unwrap();
+        assert!(!missing_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0606"));
+
+        let inherit = parse("/// @inheritDoc\nclass User {}").unwrap();
+        assert!(inherit.lints.iter().any(|lint| lint.code == "OR0602"));
+        let inherit_clean = parse("/// User docs.\nclass User {}").unwrap();
+        assert!(!inherit_clean.lints.iter().any(|lint| lint.code == "OR0602"));
+        let inherit_suppressed =
+            parse("// orust:allow(OR0602)\n/// @inheritDoc\nclass User {}").unwrap();
+        assert!(!inherit_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0602"));
+
+        let broken = parse("/// Link.\n/// @see [Missing.method]\nclass User {}").unwrap();
+        assert!(broken.lints.iter().any(|lint| lint.code == "OR0604"));
+        let link_clean = parse("/// Link.\n/// @see [User]\nclass User {}").unwrap();
+        assert!(!link_clean.lints.iter().any(|lint| lint.code == "OR0604"));
+        let link_suppressed =
+            parse("// orust:allow(OR0604)\n/// Link.\n/// @see [Missing.method]\nclass User {}")
+                .unwrap();
+        assert!(!link_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0604"));
+
+        let network = parse(
+            "/// Net.\n/// @example net\n/// ```orust\n/// std:http\n/// ```\nvoid main() {}",
+        )
+        .unwrap();
+        assert!(network.lints.iter().any(|lint| lint.code == "OR0605"));
+        let network_clean = parse(
+            "/// Net.\n/// @example net\n/// ```orust\n/// print(1);\n/// ```\nvoid main() {}",
+        )
+        .unwrap();
+        assert!(!network_clean.lints.iter().any(|lint| lint.code == "OR0605"));
+        let network_suppressed = parse(
+            "// orust:allow(OR0605)\n/// Net.\n/// @example net\n/// ```orust\n/// std:http\n/// ```\nvoid main() {}",
+        )
+        .unwrap();
+        assert!(!network_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0605"));
+
+        let duplicate = parse("/// Docs.\n/// @since 1.0\n/// @since 2.0\nclass User {}").unwrap();
+        assert!(duplicate.lints.iter().any(|lint| lint.code == "OR0612"));
+        let duplicate_clean = parse("/// Docs.\n/// @since 1.0\nclass User {}").unwrap();
+        assert!(!duplicate_clean
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0612"));
+        let duplicate_suppressed = parse(
+            "// orust:allow(OR0612)\n/// Docs.\n/// @since 1.0\n/// @since 2.0\nclass User {}",
+        )
+        .unwrap();
+        assert!(!duplicate_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0612"));
+
+        let empty = parse("/// @since 1.0\nclass User {}").unwrap();
+        assert!(empty.lints.iter().any(|lint| lint.code == "OR0613"));
+        let empty_clean = parse("/// User docs.\nclass User {}").unwrap();
+        assert!(!empty_clean.lints.iter().any(|lint| lint.code == "OR0613"));
+        let empty_suppressed =
+            parse("// orust:allow(OR0613)\n/// @since 1.0\nclass User {}").unwrap();
+        assert!(!empty_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0613"));
+
+        let summary = parse("/// summary without punctuation\nclass User {}").unwrap();
+        assert!(!summary.lints.iter().any(|lint| lint.code == "OR0614"));
+        let summary_clean = parse("/// Summary.\nclass User {}").unwrap();
+        assert!(!summary_clean.lints.iter().any(|lint| lint.code == "OR0614"));
+        let summary_suppressed =
+            parse("// orust:allow(OR0614)\n/// summary without punctuation\nclass User {}")
+                .unwrap();
+        assert!(!summary_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0614"));
+        let summary_enabled =
+            parse("// orust:deny(OR0614)\n/// summary without punctuation\nclass User {}").unwrap();
+        assert!(summary_enabled
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0614"));
+
+        let marker = parse("// TODO: finish this\nclass User {}").unwrap();
+        assert!(marker.lints.iter().any(|lint| lint.code == "OR0615"));
+        let marker_clean = parse("// note: finish this\nclass User {}").unwrap();
+        assert!(!marker_clean.lints.iter().any(|lint| lint.code == "OR0615"));
+        let marker_suppressed =
+            parse("// orust:allow(OR0615)\n// TODO: finish this\nclass User {}").unwrap();
+        assert!(!marker_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0615"));
+
+        let mut since_new = parse("/// Docs.\n/// @since 2.0.0\nclass User {}").unwrap();
+        since_new.lint_documentation(Some("1.0.0"), None);
+        assert!(since_new.lints.iter().any(|lint| lint.code == "OR0610"));
+        let mut since_clean = parse("/// Docs.\n/// @since 1.0.0\nclass User {}").unwrap();
+        since_clean.lint_documentation(Some("1.0.0"), None);
+        assert!(!since_clean.lints.iter().any(|lint| lint.code == "OR0610"));
+        let mut since_suppressed =
+            parse("// orust:allow(OR0610)\n/// Docs.\n/// @since 2.0.0\nclass User {}").unwrap();
+        since_suppressed.lint_documentation(Some("1.0.0"), None);
+        assert!(!since_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0610"));
+
+        let mut deprecated_use = parse(
+            "/// Old API.\n/// @deprecated since 0.3.0 use new_api\nvoid old_api() {}\nvoid run() { old_api(); }",
+        )
+        .unwrap();
+        deprecated_use.lint_documentation(Some("1.0.0"), None);
+        assert!(deprecated_use
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0611"));
+        let mut deprecated_clean = parse(
+            "/// Old API.\n/// @deprecated since 0.3.0 use new_api\nvoid old_api() {}\nvoid run() { new_api(); }",
+        )
+        .unwrap();
+        deprecated_clean.lint_documentation(Some("1.0.0"), None);
+        assert!(!deprecated_clean
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0611"));
+        let mut deprecated_suppressed = parse(
+            "// orust:allow(OR0611)\n/// Old API.\n/// @deprecated since 0.3.0 use new_api\nvoid old_api() {}\nvoid run() { old_api(); }",
+        )
+        .unwrap();
+        deprecated_suppressed.lint_documentation(Some("1.0.0"), None);
+        assert!(!deprecated_suppressed
+            .lints
+            .iter()
+            .any(|lint| lint.code == "OR0611"));
+    }
+
+    #[test]
+    fn inherit_doc_resolves_interface_method_documentation() {
+        let program = parse(
+            "interface Greeter { /// Greets a person.\n /// @param name the person\n String greet(String name); } class Friendly implements Greeter { /// @inheritDoc\n String greet(String name) { return name; } }",
+        )
+        .unwrap();
+        let class_method = match &program.items[1].node {
+            Item::Class(class) => class.methods[0].span,
+            other => panic!("expected class, got {other:?}"),
+        };
+        let resolved = program.resolved_docs_for_span(class_method).unwrap();
+        assert_eq!(resolved.body, "Greets a person.");
+        assert!(resolved
+            .tags
+            .iter()
+            .any(|tag| matches!(tag, DocTag::Param { name, .. } if name == "name")));
+        assert!(!program.lints.iter().any(|lint| lint.code == "OR0602"));
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            failure_persistence: None,
+            .. ProptestConfig::default()
+        })]
+
+        #[test]
+        fn proptest_cst_roundtrip_with_random_comment_insertions(
+            offset in 0usize..=26,
+            case in 0u32..10_000,
+        ) {
+            let base = "void main() { print(1); }\n";
+            let left = offset.checked_sub(1).and_then(|index| base.as_bytes().get(index));
+            let right = base.as_bytes().get(offset);
+            prop_assume!(
+                !matches!(left, Some(value) if value.is_ascii_alphanumeric() || *value == b'_')
+                    || !matches!(right, Some(value) if value.is_ascii_alphanumeric() || *value == b'_')
+            );
+            let comment = format!("/* generated-{case} */");
+            let source = format!("{}{}{}", &base[..offset], comment, &base[offset..]);
+            let program = parse(&source).unwrap();
+            prop_assert_eq!(program.lossless_source(), source);
+            prop_assert!(program.comments.iter().any(|value| value.text.contains(&case.to_string())));
+        }
+
+        #[test]
+        fn proptest_formatter_is_idempotent_with_comments(
+            value in 0u8..=9,
+            prefix in proptest::string::string_regex("[A-Za-z0-9 ]{0,24}").unwrap(),
+        ) {
+            let source = format!(
+                "// {prefix}  \r\nvoid main() {{ /* left */ print({value}); // right  \r\n}}\r\n"
+            );
+            let first = format_source(&source);
+            let second = format_source(&first);
+            prop_assert_eq!(&second, &first);
+            prop_assert!(first.contains("/* left */"));
+            prop_assert!(first.contains("// right"));
+        }
+
+        #[test]
+        fn proptest_doc_parser_never_panics_or_loses_text(
+            payload in any::<String>(),
+            case in 0u16..10_000,
+        ) {
+            let arbitrary = format!("/// arbitrary @tag{case} {payload}");
+            let block = DocBlock::parse(
+                &arbitrary,
+                Span { start: 0, end: arbitrary.len() },
+            );
+            prop_assert_eq!(&block.raw, &arbitrary);
+            let tag = format!("@tag{}", case);
+            prop_assert!(block.raw.contains(&tag));
+        }
     }
 }

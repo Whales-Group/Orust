@@ -1,0 +1,15 @@
+//! Phase 6 documentation fixture.
+//! @author Ada Lovelace <ada@example.com>
+
+/// A documented invoice.
+/// @author Grace Hopper
+/// @todo add persistence
+/// @param amount cents
+/// @returns the invoice
+/// @example smoke
+/// ```orust
+/// print(1);
+/// ```
+export void invoice(int amount) {
+    print(amount);
+}

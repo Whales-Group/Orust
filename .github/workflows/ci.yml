@@ -1,0 +1,131 @@
+name: Orust CI and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: tests
+        run: cargo test --workspace
+      - name: doctests
+        run: cargo test --workspace --doc
+      - name: book tests
+        run: bash scripts/check-book.sh
+      - name: conformance
+        run: cargo test --manifest-path conformance/Cargo.toml
+
+  benchmarks:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: benchmarks
+        run: cargo bench --workspace
+
+  fuzz-smoke:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: fuzz smoke
+        run: cargo test --manifest-path fuzz/Cargo.toml
+
+  release-binaries:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            asset: macos-aarch64
+          - runner: macos-13
+            target: x86_64-apple-darwin
+            asset: macos-x86_64
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            asset: linux-x86_64
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            asset: windows-x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }} -p orust-cli -p orust-lsp
+      - name: Package release archive
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          stage="${PWD}/dist/orust-${version}-${ASSET}"
+          mkdir -p "${stage}/runtime"
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            cp "target/${TARGET}/release/orust.exe" "${stage}/orust.exe"
+            cp "target/${TARGET}/release/orust-lsp.exe" "${stage}/orust-lsp.exe"
+            archive="${PWD}/dist/orust-${version}-${ASSET}.zip"
+          else
+            cp "target/${TARGET}/release/orust" "${stage}/orust"
+            cp "target/${TARGET}/release/orust-lsp" "${stage}/orust-lsp"
+            archive="${PWD}/dist/orust-${version}-${ASSET}.tar.gz"
+          fi
+          cp -R crates/orust-runtime/. "${stage}/runtime/"
+          cp README.md LICENSE "${stage}/"
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            (cd "${stage}" && 7z a "${archive}" *)
+          else
+            tar -czf "${archive}" -C "${stage}" .
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orust-package-${{ matrix.asset }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release-binaries
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orust-package-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/**/*

@@ -9,8 +9,22 @@ use std::{
 fn write_generated_project_kind(
     program: &orust_syntax::Program,
     library: bool,
+    include_comments: bool,
 ) -> Result<(PathBuf, orust_emit::GeneratedRust), String> {
-    let project = PathBuf::from("target/orust");
+    write_generated_project_kind_at(
+        program,
+        library,
+        include_comments,
+        PathBuf::from("target/rust"),
+    )
+}
+
+fn write_generated_project_kind_at(
+    program: &orust_syntax::Program,
+    library: bool,
+    include_comments: bool,
+    project: PathBuf,
+) -> Result<(PathBuf, orust_emit::GeneratedRust), String> {
     fs::create_dir_all(project.join("src")).map_err(|error| error.to_string())?;
     let target = if library { "lib" } else { "main" };
     let target_section = if library {
@@ -18,9 +32,10 @@ fn write_generated_project_kind(
     } else {
         ""
     };
+    let runtime_path = runtime_crate_path()?;
     fs::write(
         project.join("Cargo.toml"),
-        format!("[workspace]\n\n[package]\nname = \"orust-generated\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\norust-runtime = {{ path = \"../../crates/orust-runtime\" }}\n"),
+        format!("[workspace]\n\n[package]\nname = \"orust-generated\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\norust-runtime = {{ path = \"{}\" }}\n", runtime_path.display()),
     )
     .map_err(|error| error.to_string())?;
     let stale_target = if library { "main.rs" } else { "lib.rs" };
@@ -31,13 +46,325 @@ fn write_generated_project_kind(
     if PathBuf::from("Cargo.lock").exists() {
         fs::copy("Cargo.lock", project.join("Cargo.lock")).map_err(|error| error.to_string())?;
     };
-    let generated = orust_emit::emit_with_spans(program);
+    let generated = if include_comments {
+        let code = orust_emit::emit_with_comments(program);
+        let mut generated = orust_emit::emit_with_spans(program);
+        generated.code = code;
+        generated
+    } else {
+        orust_emit::emit_with_spans(program)
+    };
     fs::write(
         project.join("src").join(format!("{target}.rs")),
         &generated.code,
     )
     .map_err(|error| error.to_string())?;
     Ok((project, generated))
+}
+
+fn report_lints(program: &orust_syntax::Program) {
+    for lint in &program.lints {
+        eprintln!(
+            "warning[{}] at {}..{}: {}",
+            lint.code, lint.span.start, lint.span.end, lint.message
+        );
+    }
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn doc_blocks(program: &orust_syntax::Program) -> Vec<orust_syntax::DocBlock> {
+    program.doc_blocks()
+}
+
+fn source_line_number(source: &str, offset: usize) -> usize {
+    source[..offset.min(source.len())]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1
+}
+
+fn todo_lines(program: &orust_syntax::Program) -> Vec<String> {
+    let mut todos = Vec::new();
+    for comment in &program.comments {
+        let Some(doc) = comment.doc_block() else {
+            continue;
+        };
+        for tag in doc.tags {
+            if let orust_syntax::DocTag::Todo(text) = tag {
+                todos.push(format!(
+                    "{}:{}: {}",
+                    comment.line_start, comment.line_start, text
+                ));
+            }
+        }
+    }
+    for comment in &program.comments {
+        let plain = comment.text.trim();
+        if let Some(value) = plain.strip_prefix("// TODO(") {
+            if let Some((owner, text)) = value.split_once("): ") {
+                todos.push(format!(
+                    "{}:{}: {} ({})",
+                    comment.line_start, comment.line_start, text, owner
+                ));
+            }
+        }
+    }
+    todos.sort();
+    todos
+}
+
+fn author_lines(program: &orust_syntax::Program) -> Vec<String> {
+    let mut authors = Vec::new();
+    for doc in doc_blocks(program) {
+        for tag in doc.tags {
+            if let orust_syntax::DocTag::Author { name, email, url } = tag {
+                let mut value = name;
+                if let Some(email) = email {
+                    value.push_str(&format!(" <{email}>"));
+                }
+                if let Some(url) = url {
+                    value.push_str(&format!(" ({url})"));
+                }
+                authors.push(value);
+            }
+        }
+    }
+    authors.sort();
+    authors.dedup();
+    authors
+}
+
+fn render_doc_site(program: &orust_syntax::Program, title: &str) -> String {
+    let mut html = format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title></head><body><main>",
+        html_escape(title)
+    );
+    for doc in doc_blocks(program) {
+        html.push_str("<article>");
+        if !doc.summary.is_empty() {
+            html.push_str("<h2>");
+            html.push_str(&html_escape(&doc.summary));
+            html.push_str("</h2>");
+        }
+        if !doc.body.is_empty() {
+            html.push_str("<p>");
+            html.push_str(&html_escape(&doc.body));
+            html.push_str("</p>");
+        }
+        for tag in doc.tags {
+            match tag {
+                orust_syntax::DocTag::Author { name, .. } => html.push_str(&format!(
+                    "<p class=\"author\">Author: {}</p>",
+                    html_escape(&name)
+                )),
+                orust_syntax::DocTag::Since(version) => html.push_str(&format!(
+                    "<p class=\"since\">Since {}</p>",
+                    html_escape(&version)
+                )),
+                orust_syntax::DocTag::Version(version) => html.push_str(&format!(
+                    "<p class=\"version\">Version {}</p>",
+                    html_escape(&version)
+                )),
+                orust_syntax::DocTag::License(license) => html.push_str(&format!(
+                    "<p class=\"license\">License: {}</p>",
+                    html_escape(&license)
+                )),
+                orust_syntax::DocTag::Copyright(copyright) => html.push_str(&format!(
+                    "<p class=\"copyright\">Copyright: {}</p>",
+                    html_escape(&copyright)
+                )),
+                orust_syntax::DocTag::Category(category) => html.push_str(&format!(
+                    "<p class=\"category\">{}</p>",
+                    html_escape(&category)
+                )),
+                orust_syntax::DocTag::Unknown { name, text } => html.push_str(&format!(
+                    "<p class=\"unknown\">@{} {}</p>",
+                    html_escape(&name),
+                    html_escape(&text)
+                )),
+                _ => {}
+            }
+        }
+        html.push_str("</article>");
+    }
+    html.push_str("</main></body></html>\n");
+    html
+}
+
+fn eject_project(source_path: &str, output_dir: &std::path::Path) -> Result<(), String> {
+    let source = fs::read_to_string(source_path).map_err(|error| error.to_string())?;
+    let program = parse(&source).map_err(|error| error.to_string())?;
+    let runtime_path = runtime_crate_path()?;
+    let has_main = program.items.iter().any(|item| {
+        matches!(
+            &item.node,
+            orust_syntax::Item::Function(function) if function.name == "main"
+        )
+    });
+    let source_name = if has_main { "main.rs" } else { "lib.rs" };
+    let target_section = if has_main {
+        String::new()
+    } else {
+        "[lib]\npath = \"src/lib.rs\"\n\n".to_owned()
+    };
+    fs::create_dir_all(output_dir.join("src")).map_err(|error| error.to_string())?;
+    fs::write(
+        output_dir.join("Cargo.toml"),
+        format!(
+            "[workspace]\n\n[package]\nname = \"orust-ejected\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\norust-runtime = {{ path = \"{}\" }}\n",
+            runtime_path.display()
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    for stale_name in ["main.rs", "lib.rs"] {
+        if stale_name != source_name {
+            let stale = output_dir.join("src").join(stale_name);
+            if stale.exists() {
+                fs::remove_file(stale).map_err(|error| error.to_string())?;
+            }
+        }
+    }
+    fs::write(
+        output_dir.join("src").join(source_name),
+        orust_emit::emit(&program),
+    )
+    .map_err(|error| error.to_string())?;
+    fs::write(
+        output_dir.join("EJECT_NOTES.md"),
+        format!(
+            "# Eject notes\n\nGenerated from `{source_path}`.\n\nORust documentation and comments were preserved where Rustdoc has an equivalent.\n"
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn run_doc_tests(source_path: &str) -> Result<usize, String> {
+    let source = fs::read_to_string(source_path).map_err(|error| error.to_string())?;
+    let program = parse(&source).map_err(|error| error.to_string())?;
+    let mut count = 0;
+    for doc in program.doc_blocks() {
+        for tag in doc.tags {
+            let orust_syntax::DocTag::Example { code, .. } = tag else {
+                continue;
+            };
+            if code.trim().is_empty() {
+                continue;
+            }
+            let snippet = if code.contains("void main(") {
+                code
+            } else {
+                format!("void main() {{ {code} }}")
+            };
+            let snippet_program = parse(&snippet).map_err(|error| {
+                format!(
+                    "doc: {source_path}:{}: {}",
+                    source_line_number(&program.source, doc.span.start),
+                    error.message
+                )
+            })?;
+            let example_program = if program.items.iter().any(|item| {
+                matches!(&item.node, orust_syntax::Item::Function(function) if function.name == "main")
+            }) {
+                snippet_program
+            } else {
+                let combined = format!("{source}\n{snippet}");
+                parse(&combined).map_err(|error| {
+                    format!(
+                        "doc: {source_path}:{}: {}",
+                        source_line_number(&program.source, doc.span.start),
+                        error.message
+                    )
+                })?
+            };
+            compile_doc_example(
+                &example_program,
+                source_path,
+                source_line_number(&program.source, doc.span.start),
+                count,
+            )?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+fn compile_doc_example(
+    program: &orust_syntax::Program,
+    source_path: &str,
+    source_line: usize,
+    index: usize,
+) -> Result<(), String> {
+    let project = PathBuf::from("target/orust-doc-tests").join(index.to_string());
+    fs::create_dir_all(project.join("src")).map_err(|error| error.to_string())?;
+    let runtime = runtime_crate_path()?;
+    let manifest = project.join("Cargo.toml");
+    for stale_name in ["main.rs", "lib.rs"] {
+        let stale = project.join("src").join(stale_name);
+        if stale.exists() {
+            fs::remove_file(stale).map_err(|error| error.to_string())?;
+        }
+    }
+    let stale_test = project.join("tests/doc_example.rs");
+    if stale_test.exists() {
+        fs::remove_file(stale_test).map_err(|error| error.to_string())?;
+    }
+    fs::write(
+        &manifest,
+        format!(
+            "[workspace]\n\n[package]\nname = \"orust-doc-test-{index}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\norust-runtime = {{ path = {:?} }}\n",
+            runtime.to_string_lossy()
+        ),
+    )
+    .map_err(|error| error.to_string())?;
+    fs::write(project.join("src/main.rs"), orust_emit::emit(program))
+        .map_err(|error| error.to_string())?;
+
+    let output = Command::new("cargo")
+        .args(["test", "--offline", "--manifest-path"])
+        .arg(&manifest)
+        .output()
+        .map_err(|error| format!("doc: {source_path}:{source_line}: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "doc: {source_path}:{source_line}: generated example failed to compile\n{stderr}"
+        ))
+    }
+}
+
+fn runtime_crate_path() -> Result<PathBuf, String> {
+    let candidates = env::current_dir()
+        .ok()
+        .into_iter()
+        .flat_map(|cwd| cwd.ancestors().map(PathBuf::from).collect::<Vec<_>>())
+        .chain(env::current_exe().ok().into_iter().flat_map(|executable| {
+            executable
+                .ancestors()
+                .map(PathBuf::from)
+                .collect::<Vec<_>>()
+        }));
+    let runtime = candidates
+        .flat_map(|path| {
+            [path.join("runtime"), path.join("crates/orust-runtime")]
+                .into_iter()
+                .filter(|candidate| candidate.join("Cargo.toml").is_file())
+        })
+        .next()
+        .ok_or_else(|| {
+            String::from("could not locate runtime/Cargo.toml or crates/orust-runtime/Cargo.toml")
+        })?;
+    fs::canonicalize(runtime).map_err(|error| error.to_string())
 }
 
 fn module_name(path: &std::path::Path) -> String {
@@ -313,6 +640,7 @@ fn emit_module_contents(
     programs: &HashMap<PathBuf, orust_syntax::Program>,
     rust_files: &[PathBuf],
     entry: &std::path::Path,
+    include_comments: bool,
 ) -> Result<(), String> {
     let mut source_files = programs
         .keys()
@@ -325,7 +653,12 @@ fn emit_module_contents(
         let program = programs.get(&file).expect("source file was collected");
         let mut code = import_use_lines(&file, source_root, program, programs);
         code.push_str(&export_use_lines(&file, source_root, program, programs));
-        code.push_str(&orust_emit::emit_without_records(program));
+        let emitted = if include_comments {
+            orust_emit::emit_without_records_with_comments(program)
+        } else {
+            orust_emit::emit_without_records(program)
+        };
+        code.push_str(&emitted);
         if module_name(&file) == "index" {
             out.push_str(&code);
         } else {
@@ -376,6 +709,7 @@ fn emit_module_contents(
             programs,
             rust_files,
             entry,
+            include_comments,
         )?;
         out.push_str("}\n");
     }
@@ -442,6 +776,22 @@ fn explain_code(code: &str) -> Option<&'static str> {
         "OR0017" => Some(
             "OR0017 — unreachable pattern\n\nWhat happened:\nAn earlier match pattern already handles every value this pattern could receive.\n\nFixes:\nRemove the redundant case or reorder the patterns.\n\nRust equivalent:\nrustc emits the `unreachable_patterns` lint.\n",
         ),
+        "OR0601" => Some("OR0601 — documentation comment documents nothing\n\nAdd a declaration after the doc comment or suppress with `// orust:allow(OR0601)`.\n"),
+        "OR0602" => Some("OR0602 — inherited documentation has no parent\n\nAdd documentation to the interface method or remove `@inheritDoc`.\n"),
+        "OR0603" => Some("OR0603 — unknown documentation tag\n\nUse a supported doc tag or suppress with `// orust:allow(OR0603)`.\n"),
+        "OR0604" => Some("OR0604 — broken documentation link\n\nUpdate the link to an exported ORust item.\n"),
+        "OR0605" => Some("OR0605 — doctest uses a network feature without `no_run`\n\nMark the example `no_run` or `ignore`.\n"),
+        "OR0606" => Some("OR0606 — exported item is missing documentation\n\nAdd an outer doc comment to the public item.\n"),
+        "OR0607" => Some("OR0607 — documentation parameters do not match\n\nDocument each real parameter exactly once.\n"),
+        "OR0608" => Some("OR0608 — documentation errors do not match\n\nUse `@throws` with the declared error type.\n"),
+        "OR0609" => Some("OR0609 — returns documentation on a void function\n\nRemove `@returns` or return a value.\n"),
+        "OR0610" => Some("OR0610 — documentation version is outside the package release range\n\nKeep `@since` between the package's first release and current package version, or suppress with `// orust:allow(OR0610)`.\n"),
+        "OR0611" => Some("OR0611 — deprecated item is still used in this package\n\nMigrate to the replacement API or suppress with `// orust:allow(OR0611)`.\n"),
+        "OR0612" => Some("OR0612 — duplicate documentation tag\n\nKeep singleton tags such as `@since`, `@version`, and `@returns` to one occurrence, or suppress with `// orust:allow(OR0612)`.\n"),
+        "OR0613" => Some("OR0613 — documentation has no summary\n\nAdd prose before the tags, or suppress with `// orust:allow(OR0613)`.\n"),
+        "OR0614" => Some("OR0614 — summary style warning\n\nUse a complete summary sentence when the project enables this optional lint. It is allow-by-default.\n"),
+        "OR0615" => Some("OR0615 — work-marker comment\n\nResolve TODO/FIXME/HACK/XXX comments or suppress with `// orust:allow(OR0615)`.\n"),
+        "OR0616" => Some("OR0616 — unknown suppression code\n\nUse a registered ORust lint code in `orust:allow(...)`, or remove the suppression.\n"),
         _ => None,
     }
 }
@@ -855,6 +1205,13 @@ fn cargo_package_name(config: Option<&str>) -> String {
     "orust-generated".into()
 }
 
+fn manifest_value(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let (name, value) = line.split_once('=')?;
+        (name.trim() == key).then(|| value.trim().trim_matches('"').to_owned())
+    })
+}
+
 fn clear_generated_source_tree(source: &std::path::Path) -> Result<(), String> {
     if !source.exists() {
         return Ok(());
@@ -892,9 +1249,190 @@ fn is_cargo_project_manifest(path: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+fn project_manifest_for(path: &std::path::Path) -> Option<PathBuf> {
+    let start = if path.is_file() {
+        path.parent().unwrap_or(path)
+    } else {
+        path
+    };
+    start.ancestors().find_map(|ancestor| {
+        let orust_manifest = ancestor.join("orust.toml");
+        if orust_manifest.exists() {
+            return Some(orust_manifest);
+        }
+        let cargo_manifest = ancestor.join("Cargo.toml");
+        is_cargo_project_manifest(&cargo_manifest).then_some(cargo_manifest)
+    })
+}
+
+fn project_entry_for(directory: &std::path::Path) -> Option<PathBuf> {
+    for ancestor in directory.ancestors() {
+        let orust_manifest = ancestor.join("orust.toml");
+        if orust_manifest.exists() {
+            let entry = fs::read_to_string(&orust_manifest)
+                .ok()
+                .and_then(|text| manifest_value(&text, "entry"))
+                .unwrap_or_else(|| "src/main.or".to_owned());
+            let candidate = ancestor.join(entry);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+
+        let cargo_manifest = ancestor.join("Cargo.toml");
+        if is_cargo_project_manifest(&cargo_manifest) {
+            let orust_entry = ancestor.join("src/main.or");
+            if orust_entry.exists() {
+                return Some(orust_entry);
+            }
+            let rust_entry = ancestor.join("src/main.rs");
+            if rust_entry.exists() {
+                return Some(rust_entry);
+            }
+        }
+    }
+    None
+}
+
+fn run_native_project(
+    command_name: &str,
+    source_path: &std::path::Path,
+    features: Option<&str>,
+) -> ExitCode {
+    let Some(manifest) = project_manifest_for(source_path) else {
+        eprintln!(
+            "error: could not find a package Cargo.toml for {}",
+            source_path.display()
+        );
+        return ExitCode::FAILURE;
+    };
+    match cargo_command(command_name, &manifest, features).output() {
+        Ok(output) if output.status.success() => {
+            if matches!(command_name, "check" | "build" | "test") {
+                println!("ok: {}", source_path.display());
+            } else {
+                print!("{}", String::from_utf8_lossy(&output.stdout));
+            }
+            ExitCode::SUCCESS
+        }
+        Ok(output) => {
+            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+            ExitCode::FAILURE
+        }
+        Err(error) => {
+            eprintln!("error: could not invoke cargo: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn copy_generated_binary(project: &std::path::Path, source_path: &std::path::Path) {
+    let manifest = project.join("Cargo.toml");
+    let Ok(manifest_text) = fs::read_to_string(&manifest) else {
+        return;
+    };
+    let package = cargo_package_name(Some(&manifest_text));
+    let executable = if cfg!(windows) {
+        project.join("target/debug").join(format!("{package}.exe"))
+    } else {
+        project.join("target/debug").join(&package)
+    };
+    if !executable.exists() {
+        return;
+    }
+    let destination_root = project_manifest_for(source_path)
+        .and_then(|manifest| manifest.parent().map(PathBuf::from))
+        .or_else(|| env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let destination = destination_root.join("target").join(&package);
+    if let Some(parent) = destination.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Err(error) = fs::copy(&executable, &destination) {
+        eprintln!(
+            "warning: could not copy generated binary to {}: {error}",
+            destination.display()
+        );
+    }
+}
+
+fn lint_path(path: &str, features: Option<&str>) -> ExitCode {
+    let source_path = std::path::Path::new(path);
+    let source = match fs::read_to_string(source_path) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("error: could not read {path}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let program = match parse(&source) {
+        Ok(program) => program,
+        Err(error) => {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    report_lints(&program);
+    let lint_project = PathBuf::from("target/orust-lint");
+    let _ = fs::remove_dir_all(&lint_project);
+    let is_project = project_manifest_for(source_path).is_some();
+    let generated = if is_project {
+        write_generated_project_tree_at(source_path, false, false, lint_project.clone())
+    } else {
+        write_generated_project_kind_at(&program, false, false, lint_project.clone())
+    };
+    let result = match generated {
+        Ok((project, generated)) => {
+            let result = cargo_command("check", &project.join("Cargo.toml"), features).output();
+            match result {
+                Ok(output) if output.status.success() => {
+                    println!("ok: {path}");
+                    ExitCode::SUCCESS
+                }
+                Ok(output) => {
+                    for diagnostic in orust_diag::parse_json_diagnostics(
+                        &String::from_utf8_lossy(&output.stdout),
+                        &generated.code,
+                        &generated.spans,
+                    ) {
+                        eprint!("{}", orust_diag::translate(&diagnostic, &source, path));
+                    }
+                    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+                    ExitCode::FAILURE
+                }
+                Err(error) => {
+                    eprintln!("error: could not invoke cargo: {error}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        }
+    };
+    let _ = fs::remove_dir_all(&lint_project);
+    result
+}
+
 fn write_generated_project_tree(
     entry_path: &std::path::Path,
     library: bool,
+    include_comments: bool,
+) -> Result<(PathBuf, orust_emit::GeneratedRust), String> {
+    write_generated_project_tree_at(
+        entry_path,
+        library,
+        include_comments,
+        PathBuf::from("target/rust"),
+    )
+}
+
+fn write_generated_project_tree_at(
+    entry_path: &std::path::Path,
+    library: bool,
+    include_comments: bool,
+    project: PathBuf,
 ) -> Result<(PathBuf, orust_emit::GeneratedRust), String> {
     let entry_path = normalize_path(entry_path);
     let mut source_root = entry_path.parent().unwrap().to_path_buf();
@@ -946,7 +1484,19 @@ fn write_generated_project_tree(
                 .map_err(|e| e.to_string())?,
         );
     }
-    let project = PathBuf::from("target/orust");
+    if let Some(config_text) = config
+        .as_ref()
+        .and_then(|path| fs::read_to_string(path).ok())
+    {
+        let package_version = manifest_value(&config_text, "version");
+        let first_release = manifest_value(&config_text, "first_release");
+        for program in programs.values_mut() {
+            program.lint_documentation(package_version.as_deref(), first_release.as_deref());
+        }
+    }
+    for program in programs.values() {
+        report_lints(program);
+    }
     fs::create_dir_all(project.join("src")).map_err(|e| e.to_string())?;
     clear_generated_source_tree(&project.join("src"))?;
     let mut rust_files = Vec::new();
@@ -955,20 +1505,14 @@ fn write_generated_project_tree(
         let Ok(relative) = file.strip_prefix(&source_root) else {
             continue;
         };
+        let relative = relative.strip_prefix("src").unwrap_or(relative);
         let destination = project.join("src").join(relative);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         fs::copy(file, destination).map_err(|e| e.to_string())?;
     }
-    let runtime_path = std::env::current_dir()
-        .ok()
-        .and_then(|cwd| {
-            cwd.ancestors()
-                .find(|path| path.join("crates/orust-runtime/Cargo.toml").exists())
-                .map(|path| path.join("crates/orust-runtime"))
-        })
-        .unwrap_or_else(|| PathBuf::from("../../crates/orust-runtime"));
+    let runtime_path = runtime_crate_path()?;
     let target_section = if library {
         "[lib]\npath = \"src/lib.rs\"\n\n"
     } else {
@@ -1027,7 +1571,9 @@ fn write_generated_project_tree(
     let all_programs = programs.values().collect::<Vec<_>>();
     root.push_str(&orust_emit::emit_project_record_module(&all_programs));
     for file in &rust_files {
-        if file.parent() == Some(source_root.as_path()) {
+        let is_root_rust_file = file.parent() == Some(source_root.as_path());
+        let is_src_rust_file = file.parent() == Some(source_root.join("src").as_path());
+        if is_root_rust_file || is_src_rust_file {
             root.push_str(&format!("pub mod {};\n", module_name(file)));
         }
     }
@@ -1069,6 +1615,7 @@ fn write_generated_project_tree(
             &programs,
             &rust_files,
             &entry,
+            include_comments,
         )?;
         root.push_str("}\n");
     }
@@ -1087,7 +1634,12 @@ fn write_generated_project_tree(
         entry_program,
         &programs,
     ));
-    root.push_str(&orust_emit::emit_without_records(entry_program));
+    let emitted = if include_comments {
+        orust_emit::emit_without_records_with_comments(entry_program)
+    } else {
+        orust_emit::emit_without_records(entry_program)
+    };
+    root.push_str(&emitted);
     fs::write(
         project
             .join("src")
@@ -1323,9 +1875,11 @@ fn main() -> ExitCode {
         }
     }
     let mut cargo_features = None;
+    let mut doc_tests = false;
+    let mut include_comments = command == "emit";
     if matches!(
         command.as_str(),
-        "check" | "build" | "run" | "test" | "emit"
+        "check" | "build" | "run" | "test" | "emit" | "lint"
     ) {
         while let Some(flag) = args.next() {
             match flag.as_str() {
@@ -1337,12 +1891,24 @@ fn main() -> ExitCode {
                     }
                 }
                 "--verbose" => verbose = true,
+                "--comments" if command == "emit" => include_comments = true,
+                "--no-comments" if command == "emit" => include_comments = false,
+                "--doc" if command == "test" => doc_tests = true,
                 other => {
                     eprintln!("error: unknown option `{other}`");
                     return ExitCode::from(2);
                 }
             }
         }
+    }
+    if path.is_none()
+        && matches!(
+            command.as_str(),
+            "check" | "build" | "run" | "test" | "emit" | "lint"
+        )
+    {
+        let directory = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        path = project_entry_for(&directory).map(|entry| entry.to_string_lossy().into_owned());
     }
     if command == "new" {
         let Some(project) = path else {
@@ -1370,21 +1936,39 @@ fn main() -> ExitCode {
         let source = if library {
             "export void hello() {\n  print(\"Hello from ORust\");\n}\n"
         } else {
-            "void main() {\n  print(\"Hello from ORust\");\n}\n"
+            "import 'rust:./counter.rs';\n\n@rustImport(\"crate::counter::count_to\") void countTo(int start, int end);\n\nvoid main() {\n  countTo(1, 30);\n  print(\"Hello, world!\");\n}\n"
         };
         let manifest = if workspace {
-            "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"
+            if library {
+                "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nentry = \"src/lib.or\"\n"
+            } else {
+                "[workspace]\nmembers = [\".\"]\n\n[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nentry = \"src/main.or\"\n"
+            }
         } else {
-            "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"
+            if library {
+                "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nentry = \"src/lib.or\"\n"
+            } else {
+                "[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\nentry = \"src/main.or\"\n"
+            }
         };
         let result = fs::create_dir_all(directory.join("src"))
             .and_then(|_| fs::create_dir_all(directory.join("tests")))
             .and_then(|_| fs::write(directory.join("orust.toml"), manifest))
             .and_then(|_| fs::write(directory.join("src").join(source_name), source))
             .and_then(|_| {
+                if library {
+                    Ok(())
+                } else {
+                    fs::write(
+                        directory.join("src").join("counter.rs"),
+                        "pub fn count_to(start: i64, end: i64) {\n    for value in start..=end {\n        println!(\"{value}\");\n    }\n}\n",
+                    )
+                }
+            })
+            .and_then(|_| {
                 fs::write(
                     directory.join("tests").join("smoke.or"),
-                    "test smoke() {\n  expect(true);\n}\n",
+                    "test \"smoke\" {\n  expect(true);\n}\n",
                 )
             })
             .and_then(|_| {
@@ -1399,7 +1983,7 @@ fn main() -> ExitCode {
                     if library {
                         "# ORust project\n\nRun `orust build --lib src/lib.or` to compile the library.\n"
                     } else {
-                        "# ORust project\n\nRun `orust run src/main.or` to run it.\n"
+                        "# ORust project\n\nThis starter mixes ORust and Rust. Run `orust run` from the project directory.\n\nThe ORust entry point calls the Rust implementation in `src/counter.rs`, prints 1 through 30, and then prints `Hello, world!`.\n"
                     },
                 )
             });
@@ -1427,6 +2011,213 @@ fn main() -> ExitCode {
             }
         }
     }
+    if command == "eject" {
+        let Some(source_path) = path else {
+            eprintln!("usage: orust eject <file.or> [--out <directory>]");
+            return ExitCode::from(2);
+        };
+        let flags = args.collect::<Vec<_>>();
+        let mut output_dir = PathBuf::from("target/ejected");
+        let mut index = 0;
+        while index < flags.len() {
+            if flags[index] == "--out" {
+                let Some(value) = flags.get(index + 1) else {
+                    eprintln!("error: --out requires a directory");
+                    return ExitCode::from(2);
+                };
+                output_dir = PathBuf::from(value);
+                index += 2;
+            } else {
+                eprintln!("error: unknown option `{}`", flags[index]);
+                return ExitCode::from(2);
+            }
+        }
+        return match eject_project(&source_path, &output_dir) {
+            Ok(()) => {
+                println!("ejected {source_path} to {}", output_dir.display());
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("error: eject failed: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if command == "fmt" || command == "format" {
+        let Some(source_path) = path else {
+            eprintln!("usage: orust format <file.or> [--dry-run]");
+            return ExitCode::from(2);
+        };
+        let source = match fs::read_to_string(&source_path) {
+            Ok(source) => source,
+            Err(error) => {
+                eprintln!("error: could not read {source_path}: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Err(error) = parse(&source) {
+            eprintln!("error: {error}");
+            return ExitCode::FAILURE;
+        }
+        let flags = args.collect::<Vec<_>>();
+        let dry_run = flags
+            .iter()
+            .any(|flag| flag == "--dry-run" || flag == "--check");
+        if let Some(flag) = flags
+            .iter()
+            .find(|flag| *flag != "--dry-run" && *flag != "--check")
+        {
+            eprintln!("error: unknown option `{flag}`");
+            return ExitCode::from(2);
+        }
+        let formatted = orust_syntax::format_source(&source);
+        if dry_run {
+            if formatted != source {
+                eprintln!("would format: {source_path}");
+                return ExitCode::FAILURE;
+            }
+            println!("ok: {source_path} is formatted");
+        } else if let Err(error) = fs::write(&source_path, formatted) {
+            eprintln!("error: could not write {source_path}: {error}");
+            return ExitCode::FAILURE;
+        }
+        return ExitCode::SUCCESS;
+    }
+    if command == "lint" {
+        let Some(source_path) = path else {
+            eprintln!("usage: orust lint <file.or> [--features <list>]");
+            return ExitCode::from(2);
+        };
+        return lint_path(&source_path, cargo_features.as_deref());
+    }
+    if matches!(command.as_str(), "todo" | "authors" | "doc") {
+        let Some(source_path) = path else {
+            eprintln!("usage: orust {command} <file.or> [--format table|json|markdown]");
+            return ExitCode::from(2);
+        };
+        let source = match fs::read_to_string(&source_path) {
+            Ok(source) => source,
+            Err(error) => {
+                eprintln!("error: could not read {source_path}: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let program = match parse(&source) {
+            Ok(program) => program,
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let mut format = "table".to_owned();
+        let mut deny = false;
+        let mut rustdoc = false;
+        let mut index = 0;
+        let flags = args.collect::<Vec<_>>();
+        while index < flags.len() {
+            match flags[index].as_str() {
+                "--format" => {
+                    let Some(value) = flags.get(index + 1) else {
+                        eprintln!("error: --format requires table, json, or markdown");
+                        return ExitCode::from(2);
+                    };
+                    format = value.clone();
+                    index += 2;
+                }
+                "--deny" => {
+                    deny = true;
+                    index += 1;
+                }
+                "--rustdoc" if command == "doc" => {
+                    rustdoc = true;
+                    index += 1;
+                }
+                other => {
+                    eprintln!("error: unknown option `{other}`");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        if command == "doc" {
+            if rustdoc {
+                let source_path_ref = std::path::Path::new(&source_path);
+                let is_project = source_path_ref.ancestors().any(|ancestor| {
+                    ancestor.join("orust.toml").exists()
+                        || (ancestor.join("Cargo.toml").exists()
+                            && is_cargo_project_manifest(&ancestor.join("Cargo.toml")))
+                });
+                let generated = if is_project {
+                    write_generated_project_tree(source_path_ref, true, false)
+                } else {
+                    write_generated_project_kind(&program, true, false)
+                };
+                match generated {
+                    Ok((project, _)) => {
+                        let status = Command::new("cargo")
+                            .args([
+                                "doc",
+                                "--manifest-path",
+                                project.join("Cargo.toml").to_str().unwrap(),
+                                "--no-deps",
+                            ])
+                            .status();
+                        return match status {
+                            Ok(status) if status.success() => {
+                                println!("{}", project.join("target/doc").display());
+                                ExitCode::SUCCESS
+                            }
+                            Ok(_) => ExitCode::FAILURE,
+                            Err(error) => {
+                                eprintln!("error: could not invoke cargo doc: {error}");
+                                ExitCode::FAILURE
+                            }
+                        };
+                    }
+                    Err(error) => {
+                        eprintln!("error: rustdoc generation failed: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
+            print!("{}", render_doc_site(&program, &source_path));
+            return ExitCode::SUCCESS;
+        }
+        let values = if command == "todo" {
+            todo_lines(&program)
+        } else {
+            author_lines(&program)
+        };
+        match format.as_str() {
+            "table" => {
+                for value in &values {
+                    println!("{value}");
+                }
+            }
+            "markdown" => {
+                for value in &values {
+                    println!("- {value}");
+                }
+            }
+            "json" => {
+                let values = values
+                    .iter()
+                    .map(|value| {
+                        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!("[{values}]");
+            }
+            other => {
+                eprintln!("error: unsupported format `{other}`");
+                return ExitCode::from(2);
+            }
+        }
+        if deny && !values.is_empty() {
+            return ExitCode::FAILURE;
+        }
+        return ExitCode::SUCCESS;
+    }
     if command == "add" {
         let Some(spec) = path else {
             eprintln!("usage: orust add <crate[@version]>");
@@ -1448,17 +2239,36 @@ fn main() -> ExitCode {
         "emit" | "check" | "build" | "run" | "test"
     ) || path.is_none()
     {
-        eprintln!("usage: orust <check|emit|build|run|test> <file.or> [--features <list>]\n       orust new <project-directory> [--lib | --workspace]\n       orust add <crate[@version]>\n       orust explain <OR-code-or-rustc-code>");
+        eprintln!("usage: orust <check|emit|build|run|test> [file.or|main.rs] [--features <list>]\n       orust format <file.or> [--dry-run]\n       orust lint <file.or> [--features <list>]\n       orust new <project-directory> [--lib | --workspace]\n       orust add <crate[@version]>\n       orust explain <OR-code-or-rustc-code>");
         return ExitCode::from(2);
     }
     let path = path.unwrap();
+    if path.ends_with(".rs") {
+        return run_native_project(
+            &command,
+            std::path::Path::new(&path),
+            cargo_features.as_deref(),
+        );
+    }
+    if doc_tests {
+        return match run_doc_tests(&path) {
+            Ok(count) => {
+                println!("ok: {count} documentation test(s) in {path}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let is_project = PathBuf::from(&path).ancestors().any(|ancestor| {
         ancestor.join("orust.toml").exists()
             || (ancestor.join("Cargo.toml").exists()
                 && is_cargo_project_manifest(&ancestor.join("Cargo.toml")))
     });
     if is_project {
-        match write_generated_project_tree(std::path::Path::new(&path), library) {
+        match write_generated_project_tree(std::path::Path::new(&path), library, include_comments) {
             Ok((_project, generated)) if command == "emit" => {
                 print!("{}", generated.code);
                 return ExitCode::SUCCESS;
@@ -1468,6 +2278,9 @@ fn main() -> ExitCode {
                 let result = cargo_command(&command, &manifest, cargo_features.as_deref()).output();
                 return match result {
                     Ok(output) if output.status.success() => {
+                        if matches!(command.as_str(), "run" | "build") {
+                            copy_generated_binary(&project, std::path::Path::new(&path));
+                        }
                         if verbose && command == "check" {
                             if let Ok(source) = fs::read_to_string(&path) {
                                 if let Ok(program) = parse(&source) {
@@ -1512,60 +2325,71 @@ fn main() -> ExitCode {
         .and_then(|s| parse(&s).map_err(|e| e.to_string()))
     {
         Ok(program) if command == "emit" => {
-            print!("{}", orust_emit::emit(&program));
+            report_lints(&program);
+            if include_comments {
+                print!("{}", orust_emit::emit_with_comments(&program));
+            } else {
+                print!("{}", orust_emit::emit(&program));
+            }
             ExitCode::SUCCESS
         }
-        Ok(program) => match write_generated_project_kind(&program, library) {
-            Err(error) => {
-                eprintln!("error: {error}");
-                ExitCode::FAILURE
-            }
-            Ok((project, generated)) => {
-                warn_never_awaited(&program);
-                let manifest = project.join("Cargo.toml");
-                let manifest = manifest.to_str().unwrap();
-                let result = cargo_command(
-                    &command,
-                    std::path::Path::new(manifest),
-                    cargo_features.as_deref(),
-                )
-                .output();
-                match result {
-                    Ok(output) if output.status.success() => {
-                        if verbose && command == "check" {
-                            for note in recursive_notes(&program) {
-                                eprintln!("{note}");
+        Ok(program) => {
+            report_lints(&program);
+            match write_generated_project_kind(&program, library, include_comments) {
+                Err(error) => {
+                    eprintln!("error: {error}");
+                    ExitCode::FAILURE
+                }
+                Ok((project, generated)) => {
+                    warn_never_awaited(&program);
+                    let manifest = project.join("Cargo.toml");
+                    let manifest = manifest.to_str().unwrap();
+                    let result = cargo_command(
+                        &command,
+                        std::path::Path::new(manifest),
+                        cargo_features.as_deref(),
+                    )
+                    .output();
+                    match result {
+                        Ok(output) if output.status.success() => {
+                            if matches!(command.as_str(), "run" | "build") {
+                                copy_generated_binary(&project, std::path::Path::new(&path));
                             }
+                            if verbose && command == "check" {
+                                for note in recursive_notes(&program) {
+                                    eprintln!("{note}");
+                                }
+                            }
+                            if command == "check" {
+                                string_length_index_warnings(&program);
+                            }
+                            if matches!(command.as_str(), "check" | "build" | "test") {
+                                println!("ok: {path}");
+                            } else {
+                                print!("{}", String::from_utf8_lossy(&output.stdout));
+                            }
+                            ExitCode::SUCCESS
                         }
-                        if command == "check" {
-                            string_length_index_warnings(&program);
+                        Ok(output) => {
+                            let source = fs::read_to_string(&path).unwrap_or_default();
+                            for diagnostic in orust_diag::parse_json_diagnostics(
+                                &String::from_utf8_lossy(&output.stdout),
+                                &generated.code,
+                                &generated.spans,
+                            ) {
+                                eprint!("{}", orust_diag::translate(&diagnostic, &source, &path));
+                            }
+                            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+                            ExitCode::FAILURE
                         }
-                        if matches!(command.as_str(), "check" | "build" | "test") {
-                            println!("ok: {path}");
-                        } else {
-                            print!("{}", String::from_utf8_lossy(&output.stdout));
+                        Err(error) => {
+                            eprintln!("error: could not invoke cargo: {error}");
+                            ExitCode::FAILURE
                         }
-                        ExitCode::SUCCESS
-                    }
-                    Ok(output) => {
-                        let source = fs::read_to_string(&path).unwrap_or_default();
-                        for diagnostic in orust_diag::parse_json_diagnostics(
-                            &String::from_utf8_lossy(&output.stdout),
-                            &generated.code,
-                            &generated.spans,
-                        ) {
-                            eprint!("{}", orust_diag::translate(&diagnostic, &source, &path));
-                        }
-                        eprint!("{}", String::from_utf8_lossy(&output.stderr));
-                        ExitCode::FAILURE
-                    }
-                    Err(error) => {
-                        eprintln!("error: could not invoke cargo: {error}");
-                        ExitCode::FAILURE
                     }
                 }
             }
-        },
+        }
         Err(error) => {
             eprintln!("error: {error}");
             ExitCode::FAILURE
@@ -1576,8 +2400,9 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        cargo_package_name, cargo_patch_sections, cargo_section_lines,
-        cargo_target_dependency_sections, explain_code, exported_item_names,
+        author_lines, cargo_package_name, cargo_patch_sections, cargo_section_lines,
+        cargo_target_dependency_sections, explain_code, exported_item_names, render_doc_site,
+        todo_lines,
     };
     use std::{collections::HashMap, path::PathBuf};
 
@@ -1585,13 +2410,23 @@ mod tests {
     fn explains_orust_and_rust_codes() {
         assert!(explain_code("OR0005").is_some());
         assert!(explain_code("E0382").is_some());
-        for code in ["OR0012", "OR0013", "OR0014", "OR0015", "OR0016", "OR0017"] {
+        for code in [
+            "OR0012", "OR0013", "OR0014", "OR0015", "OR0016", "OR0017", "OR0601", "OR0602",
+            "OR0603", "OR0604", "OR0605", "OR0606", "OR0607", "OR0608", "OR0609", "OR0610",
+            "OR0611", "OR0612", "OR0613", "OR0614", "OR0615", "OR0616",
+        ] {
             assert!(
                 explain_code(code).is_some(),
                 "missing explanation for {code}"
             );
         }
         assert!(explain_code("unknown").is_none());
+    }
+
+    #[test]
+    fn generated_smoke_test_template_is_parseable() {
+        let source = "test \"smoke\" {\n  expect(true);\n}\n";
+        assert!(orust_syntax::parse(source).is_ok());
     }
 
     #[test]
@@ -1664,5 +2499,23 @@ mod tests {
         programs.insert(a.clone(), orust_syntax::parse("export 'b.or';").unwrap());
         programs.insert(b, orust_syntax::parse("export 'a.or';").unwrap());
         assert!(exported_item_names(&a, programs.get(&a).unwrap(), &programs).is_empty());
+    }
+
+    #[test]
+    fn renders_deterministic_doc_tools() {
+        let program = orust_syntax::parse(
+            "//! Package docs\n//! @author Ada Lovelace\n/// Invoice docs\n/// @todo finish totals\n/// @author Grace Hopper <grace@example.com>\nclass Invoice {}",
+        )
+        .unwrap();
+        assert_eq!(todo_lines(&program), vec!["4:4: finish totals"]);
+        assert_eq!(
+            author_lines(&program),
+            vec!["Ada Lovelace", "Grace Hopper <grace@example.com>"]
+        );
+        let html = render_doc_site(&program, "demo.or");
+        assert!(html.contains("<title>demo.or</title>"));
+        assert!(!html.contains("finish totals"));
+        assert!(html.contains("Invoice docs"));
+        assert!(html.contains("Grace Hopper"));
     }
 }

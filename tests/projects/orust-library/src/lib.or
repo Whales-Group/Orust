@@ -1,5 +1,6 @@
 export 'api.or' show User;
 
+/// Returns the provided name as a greeting.
 export String greet(String name) {
     return name;
 }

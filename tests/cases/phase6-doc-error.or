@@ -1,0 +1,6 @@
+/// Broken example.
+/// @example invalid
+/// ```orust
+/// print(
+/// ```
+void main() {}

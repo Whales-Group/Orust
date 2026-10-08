@@ -6,4 +6,4 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-orust_library = { package = "orust-library", path = "../../../target/orust" }
+orust_library = { package = "orust-library", path = "../../../target/rust" }

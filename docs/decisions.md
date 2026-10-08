@@ -1,5 +1,19 @@
 # Decisions
 
+## ORust Phase 6: comment representation
+
+- Comments are preserved as exact source slices with byte spans and line
+  ranges. This is deliberately lossless and keeps CRLF, tabs, BOMs, Unicode,
+  and delimiter spelling available to formatters and documentation tools.
+- The existing recursive-descent parser continues to consume syntax tokens;
+  comments are side metadata rather than parser tokens. This avoids changing
+  Rust/ORust expression parsing while the CST-level attachment model is built.
+- `Spanned<T>` exposes trivia through the containing `Program`, because adding
+  an owned trivia field to every existing AST node would change the public AST
+  and all emitter construction paths at once.
+- `OR0601` is represented as a warning lint on `Program`; an orphan doc comment
+  is not a parse error.
+
 ## 2026-10-08
 
 - Milestone 1 starts with a small hand-written lexer and recursive-descent parser. This keeps spans explicit and avoids committing to parser-combinator error-recovery details before the language surface is exercised.
@@ -87,3 +101,19 @@ single-threaded code lightweight while preserving Tokio's real `Send` and
 - Function type aliases use `Box<dyn Fn(...) -> ()>` as the first stable
   representation; this keeps aliases usable across ORust/Rust boundaries while
   avoiding an implicit ownership or calling-convention conversion.
+
+## ORust Phase 6 documentation decisions
+
+- Project-aware documentation lints are recomputed after parsing because a
+  standalone `.or` file has no package release metadata. `@since` is checked
+  against `version` and optional `first_release` manifest keys; source-only
+  parsing remains deterministic and does not guess a package version.
+- Deprecated attribute notes are emitted as plain renamed text rather than
+  intra-doc links. Rustdoc treats the attribute note as Markdown without a
+  dependable item scope, and linking there produced a rustdoc warning/ICE on
+  the CI toolchain. Regular `///` documentation links still use the naming
+  bridge.
+- Property coverage uses upstream `proptest` 1.11.0 from the checked-in Cargo
+  vendor tree. Failure persistence is disabled so test runs do not create
+  machine-specific regression files; all generated cases remain deterministic
+  under the test runner's seed behavior and work fully offline.

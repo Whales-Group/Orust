@@ -6,3 +6,9 @@ edition.workspace = true
 [lib]
 path = "src/lib.rs"
 
+[[bench]]
+name = "phase6_parser"
+harness = false
+
+[dev-dependencies]
+proptest = "1.11.0"
