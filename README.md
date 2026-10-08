@@ -77,6 +77,28 @@ curl --proto '=https' --tlsv1.2 -sSf \
   | bash -s -- --update --non-interactive
 ```
 
+The same installer can remove the installed tools. Run it without
+`--non-interactive` to choose which components to remove:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  | bash -s -- --uninstall
+```
+
+For unattended removal of all installed ORust binaries:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  | bash -s -- --uninstall --all --non-interactive
+```
+
+The runtime is a Cargo library shared by projects, so uninstalling the global
+tools does not delete it from existing projects. Remove `orust-runtime` from a
+project's `Cargo.toml` only when that project no longer uses generated ORust
+code.
+
 For a normal interactive update, omit `--non-interactive` and choose the
 components to update. Project dependencies are updated separately with:
 

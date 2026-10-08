@@ -14,6 +14,7 @@ INSTALL_RUST_ANALYZER=0
 CREATE_PROJECT=""
 NON_INTERACTIVE=0
 UPDATE_ONLY=0
+UNINSTALL_ONLY=0
 WORKSPACE_DIR=""
 CARGO_BIN_DIR="${CARGO_HOME:-${HOME}/.cargo}/bin"
 
@@ -34,6 +35,7 @@ Options:
   --runtime              Pre-fetch the published orust-runtime crate
   --rust-analyzer        Try to install Rust Analyzer through rustup when missing
   --update               Check the repository and update selected installed tools
+  --uninstall            Remove selected ORust tools from this machine
   --project NAME         Create a starter project after installation
   --non-interactive      Do not prompt; install selected/default components
   --help                 Show this help
@@ -84,6 +86,9 @@ while (($# > 0)); do
         --update)
             UPDATE_ONLY=1
             ;;
+        --uninstall)
+            UNINSTALL_ONLY=1
+            ;;
         --help|-h)
             usage
             exit 0
@@ -130,14 +135,53 @@ ask_yes_no() {
 }
 
 if [[ "${PROMPT_FD}" -ne 0 ]]; then
-    say "Choose what to install:"
-    ask_yes_no "Install the orust CLI?" y && INSTALL_CLI=1 || INSTALL_CLI=0
-    ask_yes_no "Install orust-lsp?" y && INSTALL_LSP=1 || INSTALL_LSP=0
-    ask_yes_no "Prepare the orust-runtime crate?" y && INSTALL_RUNTIME=1 || INSTALL_RUNTIME=0
+    action="Install"
+    if [[ "${UNINSTALL_ONLY}" -eq 1 ]]; then
+        say "Choose what to uninstall:"
+        action="Remove"
+    else
+        say "Choose what to install:"
+    fi
+    ask_yes_no "${action} the orust CLI?" y && INSTALL_CLI=1 || INSTALL_CLI=0
+    ask_yes_no "${action} orust-lsp?" y && INSTALL_LSP=1 || INSTALL_LSP=0
+    ask_yes_no "${action} the orust-runtime component?" y && INSTALL_RUNTIME=1 || INSTALL_RUNTIME=0
     if [[ -z "${CREATE_PROJECT}" ]] && ask_yes_no "Create a starter ORust project after installation?" n; then
         read -r -u "${PROMPT_FD}" -p "[orust] Project directory [hello-orust] " CREATE_PROJECT || true
         CREATE_PROJECT="${CREATE_PROJECT:-hello-orust}"
     fi
+fi
+
+remove_binary() {
+    local name="$1"
+    local path="${CARGO_BIN_DIR}/${name}"
+    if [[ -f "${path}" ]]; then
+        rm -f "${path}"
+        say "Removed ${path}"
+    elif [[ -f "${path}.exe" ]]; then
+        rm -f "${path}.exe"
+        say "Removed ${path}.exe"
+    else
+        say "${name} is not installed"
+    fi
+}
+
+if [[ "${UNINSTALL_ONLY}" -eq 1 ]]; then
+    if [[ "${INSTALL_CLI}" -eq 1 ]]; then
+        say "Removing the ORust CLI and its rustplain diagnostic helpers"
+        remove_binary orust
+        remove_binary rustplain
+        remove_binary cargo-plain
+    fi
+    if [[ "${INSTALL_LSP}" -eq 1 ]]; then
+        say "Removing the ORust language server"
+        remove_binary orust-lsp
+    fi
+    if [[ "${INSTALL_RUNTIME}" -eq 1 ]]; then
+        say "orust-runtime is a shared Cargo library, not a global executable"
+        say "It remains available to existing projects; remove it from a project Cargo.toml if no longer needed"
+    fi
+    say "Uninstallation complete."
+    exit 0
 fi
 
 install_rust() {
