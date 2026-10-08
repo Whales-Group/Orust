@@ -21,20 +21,10 @@ when you need complete control.
 
 ## Installation
 
-### One-command installer
-
 Install Rust first if it is not already installed:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-Then install the ORust CLI, runtime, and optional language server from the
-public repository:
-
-```sh
-curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh | bash
 ```
 
 The installer asks which user-facing components to install:
@@ -63,7 +53,19 @@ orust --version
 orust-lsp --version
 ```
 
-The installer supports unattended installation:
+### Install — interactive
+
+This asks which components to install:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  | bash
+```
+
+### Install all — non-interactive
+
+This installs the CLI, runtime, LSP, and Rust Analyzer when available:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
@@ -71,10 +73,20 @@ curl --proto '=https' --tlsv1.2 -sSf \
   | bash -s -- --all --non-interactive
 ```
 
-To update the selected ORust tools later, run the same public script with
-`--update`. It checks the repository, reports the workspace components being
-rebuilt, updates the CLI/LSP and rustplain binaries, and refreshes the runtime
-dependency:
+### Update — interactive
+
+This checks the public repository and asks which installed components to
+update:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  | bash -s -- --update
+```
+
+### Update — non-interactive
+
+This updates the CLI, runtime, LSP, and rustplain helpers without prompts:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
@@ -82,8 +94,9 @@ curl --proto '=https' --tlsv1.2 -sSf \
   | bash -s -- --update --non-interactive
 ```
 
-The same installer can remove the installed tools. Run it without
-`--non-interactive` to choose which components to remove:
+### Uninstall — interactive
+
+This asks which installed components to remove:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
@@ -91,12 +104,33 @@ curl --proto '=https' --tlsv1.2 -sSf \
   | bash -s -- --uninstall
 ```
 
-For unattended removal of all installed ORust binaries:
+### Uninstall all — non-interactive
+
+This removes all installed ORust binaries without prompts:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
   https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --uninstall --all --non-interactive
+```
+
+### Install one component
+
+```sh
+# CLI and runtime
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  | bash -s -- --cli
+
+# LSP and runtime
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  | bash -s -- --lsp
+
+# Runtime only
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  | bash -s -- --runtime
 ```
 
 The runtime is a Cargo library shared by projects, so uninstalling the global
