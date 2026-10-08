@@ -51,6 +51,11 @@ workspace from the public repository, installs `orust`, `orust-lsp`, and the
 checks for Rust Analyzer. It supports macOS and Linux directly, and Windows
 through Git Bash or WSL.
 
+Installation is isolated from any local Orust development checkout. The
+installer clones the selected public repository into a temporary directory and
+runs Cargo there, so local path dependencies and local workspace builds are
+not used.
+
 Verify the installation:
 
 ```sh

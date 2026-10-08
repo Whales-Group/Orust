@@ -228,8 +228,11 @@ prepare_workspace() {
     for package in "${packages[@]}"; do
         package_args+=("-p" "${package}")
     done
-    "${CARGO_COMMAND}" build --release --locked \
-        --manifest-path "${WORKSPACE_DIR}/Cargo.toml" "${package_args[@]}"
+    (
+        cd "${WORKSPACE_DIR}"
+        "${CARGO_COMMAND}" build --release --locked \
+            --manifest-path Cargo.toml "${package_args[@]}"
+    )
 }
 
 install_workspace_binary() {
@@ -291,7 +294,10 @@ prepare_runtime() {
     else
         say "Preparing orust-runtime for generated projects"
     fi
-    "${CARGO_COMMAND}" fetch --manifest-path "${temp_dir}/Cargo.toml"
+    (
+        cd "${temp_dir}"
+        "${CARGO_COMMAND}" fetch --manifest-path Cargo.toml
+    )
     rm -rf "${temp_dir}"
     trap - EXIT
     say "orust-runtime is ready; new projects will include it automatically"
