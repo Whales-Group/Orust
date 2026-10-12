@@ -28,6 +28,7 @@ fn write_generated_project_kind_at(
     project: PathBuf,
 ) -> Result<(PathBuf, orust_emit::GeneratedRust), String> {
     fs::create_dir_all(project.join("src")).map_err(|error| error.to_string())?;
+    let (runtime_dependency, _) = runtime_dependency_manifest();
     let target = if library { "lib" } else { "main" };
     let target_section = if library {
         "[lib]\npath = \"src/lib.rs\"\n\n"
@@ -37,7 +38,7 @@ fn write_generated_project_kind_at(
     fs::write(
         project.join("Cargo.toml"),
         format!(
-            "[workspace]\n\n[package]\nname = \"orust-generated\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\norust-runtime = \"={RUNTIME_VERSION}\"\n"
+            "[workspace]\n\n[package]\nname = \"orust-generated\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\n{runtime_dependency}"
         ),
     )
     .map_err(|error| error.to_string())?;
