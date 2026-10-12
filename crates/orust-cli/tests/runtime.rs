@@ -9,7 +9,7 @@ fn run_case(case: &str) -> String {
     let _guard = RUN_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_orust"))
         .current_dir(env!("CARGO_MANIFEST_DIR").to_string() + "/../..")
-        .args(["run", case])
+        .args(["run", case, "--offline"])
         .output()
         .expect("run ORust case");
     assert!(
@@ -24,7 +24,7 @@ fn test_case(case: &str) {
     let _guard = RUN_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_orust"))
         .current_dir(env!("CARGO_MANIFEST_DIR").to_string() + "/../..")
-        .args(["test", case])
+        .args(["test", case, "--offline"])
         .output()
         .expect("test ORust case");
     assert!(

@@ -82,6 +82,8 @@ jobs:
           expected="${GITHUB_REF_NAME#v}"
           actual="$(cargo pkgid -p orust-cli | sed -E 's/.*@//')"
           test "${actual}" = "${expected}"
+          runtime_actual="$(cargo pkgid -p orust-runtime | sed -E 's/.*@//')"
+          test "${runtime_actual}" = "${expected}"
       - name: Build release binaries
         run: cargo build --release --target ${{ matrix.target }} -p orust-cli -p orust-lsp
       - name: Package release archive
@@ -104,12 +106,20 @@ jobs:
             archive="${PWD}/dist/orust-${version}-${ASSET}.tar.gz"
           fi
           cp -R crates/orust-runtime/. "${stage}/runtime/"
+          printf '%s\n' "${version}" > "${stage}/runtime-version.txt"
           cp README.md LICENSE "${stage}/"
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
             (cd "${stage}" && 7z a "${archive}" *)
           else
             tar -czf "${archive}" -C "${stage}" .
           fi
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            7z l "${archive}" | grep -E 'orust(\.exe|-)'
+          else
+            tar -tzf "${archive}" | grep -E '(^|/)orust(-lsp)?$'
+          fi
+          test -f "${stage}/runtime/Cargo.toml"
+          test "$(cat "${stage}/runtime-version.txt")" = "${version}"
       - uses: actions/upload-artifact@v4
         with:
           name: orust-package-${{ matrix.asset }}
@@ -118,9 +128,44 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
-  github-release:
+      - name: Smoke-test the release CLI
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            cli="target/${TARGET}/release/orust.exe"
+          else
+            cli="target/${TARGET}/release/orust"
+          fi
+          test "$("${cli}" --version)" = "orust ${version}"
+          smoke_dir="${RUNNER_TEMP}/orust-smoke"
+          "${cli}" new "${smoke_dir}"
+          (cd "${smoke_dir}" && "${cli}" check)
+
+  release-checksums:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: release-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: orust-package-*
+          path: release-assets
+          merge-multiple: true
+      - name: Generate release checksums
+        working-directory: release-assets
+        run: sha256sum *.tar.gz *.zip > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orust-release-checksums
+          path: release-assets/SHA256SUMS
+
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release-binaries, release-checksums]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -130,6 +175,10 @@ jobs:
           pattern: orust-package-*
           path: release-assets
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: orust-release-checksums
+          path: release-assets
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:

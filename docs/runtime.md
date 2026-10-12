@@ -29,7 +29,7 @@ installer:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh | bash
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install-binary.sh | bash
 orust new my-project
 cd my-project
 orust run
@@ -41,7 +41,7 @@ the same crates.io dependency:
 
 ```toml
 [dependencies]
-orust-runtime = "0.1.2"
+orust-runtime = "=0.1.3"
 ```
 
 ## Public API areas

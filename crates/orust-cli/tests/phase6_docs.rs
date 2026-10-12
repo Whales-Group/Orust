@@ -139,7 +139,7 @@ fn phase6_acceptance_program_and_doctest_compile() {
     let workspace = format!("{}/../..", env!("CARGO_MANIFEST_DIR"));
     let unit = Command::new(binary)
         .current_dir(&workspace)
-        .args(["test", &source])
+        .args(["test", &source, "--offline"])
         .output()
         .unwrap();
     assert!(
@@ -149,7 +149,7 @@ fn phase6_acceptance_program_and_doctest_compile() {
     );
     let docs = Command::new(binary)
         .current_dir(&workspace)
-        .args(["test", &source, "--doc"])
+        .args(["test", &source, "--doc", "--offline"])
         .output()
         .unwrap();
     assert!(
@@ -173,7 +173,7 @@ fn rustdoc_command_builds_the_generated_project() {
     let workspace = format!("{}/../..", env!("CARGO_MANIFEST_DIR"));
     let output = Command::new(binary)
         .current_dir(&workspace)
-        .args(["doc", &source, "--rustdoc"])
+        .args(["doc", &source, "--rustdoc", "--offline"])
         .output()
         .unwrap();
     assert!(

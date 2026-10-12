@@ -99,13 +99,22 @@ pub fn translate(diagnostic: &Diagnostic, source: &str, file_name: &str) -> Stri
         Some("E0446") => "a public signature mentions a private type; export the type or make the member private.".into(),
         _ => diagnostic.message.clone(),
     };
-    let (line, column, source_line) = diagnostic
-        .source_span
-        .map(|span| source_location(source, span.start))
-        .unwrap_or((1, 1, ""));
-    let mut output = format!(
-        "error: {headline}\n --> {file_name}:{line}:{column}\n  |\n{line} | {source_line}\n  |\n"
-    );
+    let severity = if diagnostic.level == "warning" {
+        "warning"
+    } else {
+        "error"
+    };
+    let mut output = format!("{severity}: {headline}\n");
+    if let Some(span) = diagnostic.source_span {
+        let (line, column, source_line) = source_location(source, span.start);
+        output.push_str(&format!(
+            " --> {file_name}:{line}:{column}\n  |\n{line} | {source_line}\n  |\n"
+        ));
+    } else {
+        output.push_str(&format!(
+            " --> {file_name}\n  | generated Rust location could not be mapped to the ORust source\n  |\n"
+        ));
+    }
     match diagnostic.code.as_deref() {
         Some("E0382") => output.push_str(&format!("help: give it its own Counter: `copy {name}`\nhelp: let it look without owning: `lend {name}`\nhelp: share it explicitly with `shared class`\n")),
         Some("E0502") if diagnostic.message.contains("iter") => output.push_str("help: materialize the chain with `.toList()`, or finish the chain before calling `add()`/`remove()`\n"),
@@ -189,7 +198,12 @@ pub fn parse_json_diagnostics(
             let source_span = message
                 .get("spans")
                 .and_then(Value::as_array)
-                .and_then(|spans| spans.first())
+                .and_then(|spans| {
+                    spans
+                        .iter()
+                        .find(|span| span.get("is_primary").and_then(Value::as_bool) == Some(true))
+                        .or_else(|| spans.first())
+                })
                 .and_then(|span| {
                     let line = span.get("line_start")?.as_u64()? as usize;
                     let column = span.get("column_start")?.as_u64()? as usize;

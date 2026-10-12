@@ -9,5 +9,5 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-rustplain-diag = { version = "0.1.0", path = "../rustplain-diag" }
-rustplain-explain = { version = "0.1.0", path = "../rustplain-explain" }
+rustplain-diag = { version = "0.1.3", path = "../rustplain-diag" }
+rustplain-explain = { version = "0.1.3", path = "../rustplain-explain" }

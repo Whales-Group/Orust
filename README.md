@@ -21,6 +21,42 @@ when you need complete control.
 
 ## Installation
 
+### Install a published release (recommended)
+
+Published releases install prebuilt `orust` and `orust-lsp` binaries, so users
+do not need Git or a Rust toolchain just to install ORust:
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install-binary.sh \
+  | bash
+```
+
+On Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.ps1 | iex
+```
+
+The installer detects macOS or Linux, verifies the archive with the release
+`SHA256SUMS` file, installs versioned files under `~/.orust`, and keeps the
+active binaries in `~/.orust/bin`. Rust and Cargo are still required when an
+ORust project is built.
+
+Check the project toolchain with `orust doctor`.
+
+`orust doctor` reports the ORust version, required Rust tools, and optional
+`orust-lsp`/Rust Analyzer editor support. Missing editor tools are warnings;
+Cargo and rustc are required for project builds.
+
+For ORust development from a checkout, the original source-build installer is
+still available as `scripts/install.sh`.
+
+### Development install from source
+
+The following installer is for contributors. It builds the workspace locally
+and requires Rust, Cargo, and Git.
+
 Install Rust first if it is not already installed:
 
 ```sh
@@ -53,13 +89,13 @@ orust --version
 orust-lsp --version
 ```
 
-### Install — interactive
+### Source install — interactive
 
 This asks which components to install:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash
 ```
 
@@ -69,7 +105,7 @@ This installs the CLI, runtime, LSP, and Rust Analyzer when available:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash -s -- --all --non-interactive
 ```
 
@@ -80,7 +116,7 @@ update:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash -s -- --update
 ```
 
@@ -90,7 +126,7 @@ This updates the CLI, runtime, LSP, and rustplain helpers without prompts:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash -s -- --update --non-interactive
 ```
 
@@ -105,7 +141,7 @@ This asks which installed components to remove:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash -s -- --uninstall
 ```
 
@@ -115,7 +151,7 @@ This removes all installed ORust binaries without prompts:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash -s -- --uninstall --all --non-interactive
 ```
 
@@ -124,17 +160,17 @@ curl --proto '=https' --tlsv1.2 -sSf \
 ```sh
 # CLI and runtime
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash -s -- --cli
 
 # LSP and runtime
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash -s -- --lsp
 
 # Runtime only
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
   | bash -s -- --runtime
 ```
 
@@ -144,6 +180,10 @@ project's `Cargo.toml` only when that project no longer uses generated ORust
 code.
 
 ### Prepare a release
+
+See the complete [release and maintenance guide](docs/releasing.md) for
+versioning, CI, user upgrades, test commands, rollback, and the acceptance
+checklist.
 
 All workspace crates use the shared version in the root `Cargo.toml`. Use the
 release script to bump that version and update internal crate links:
@@ -171,9 +211,11 @@ orust fetch
 orust update
 ```
 
-The supported installation path is the public installer above. It builds the
-CLI, LSP, and internal compiler packages from GitHub, while the generated
-projects use the published `orust-runtime` crate.
+When required crates are already in Cargo's local cache, use
+`orust fetch --offline` or `orust update --offline` to avoid network access.
+
+The source installer is intended for ORust contributors. End users should use
+the prebuilt release installer at the top of this section.
 
 ## Quick start
 
@@ -211,7 +253,7 @@ orust run
 
 ORust generates Rust under `target/rust/`. Cargo compiles that Rust and runs
 the resulting binary. New projects contain a standard `Cargo.toml` with
-`orust-runtime = "0.1.2"`; Cargo fetches the published runtime automatically when
+`orust-runtime = "=0.1.3"`; Cargo fetches the published runtime automatically when
 the project is first built. The runtime is a project dependency, not a global
 command.
 
@@ -310,8 +352,8 @@ orust format                     # format an ORust file
 orust format --dry-run           # preview formatting changes
 orust emit                       # print generated Rust
 orust add serde_json@1            # add a Cargo dependency
-orust fetch                       # download declared dependencies
-orust update                      # update the Cargo lockfile
+orust fetch [--offline]          # download declared dependencies
+orust update [--offline]         # update the Cargo lockfile
 orust explain OR0005             # explain a diagnostic code
 ```
 
@@ -369,7 +411,8 @@ but embedded Rust completion and diagnostics will be limited.
 
 Run the command from the project directory and check `Cargo.toml`. Third-party
 crates must be declared there before they can be used by Rust blocks or
-generated Rust. Use `orust add crate@version`, then `orust fetch`.
+generated Rust. Use `orust add crate@version`, then `orust fetch` (or
+`orust fetch --offline` when the Cargo cache is already populated).
 
 ## License
 

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/conformance/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-cli/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-cli/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-diag/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-diag/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-emit/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-emit/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-lower/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-lsp/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-runtime/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-syntax/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/orust-syntax/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustplain-cargo/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustplain-cli/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustplain-diag/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustplain-explain/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/rustplain-render/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/fuzz/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/crates/orust-cli/target" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

@@ -7,7 +7,7 @@ The `orust` command-line tool compiles and runs ORust programs.
 ```sh
 orust new hello-orust
 cd hello-orust
-orust run
+orust run [--offline]
 ```
 
 Useful commands include `check`, `build`, `run`, `emit`, `format`, `lint`,
@@ -19,9 +19,9 @@ From a project root:
 
 ```sh
 orust add serde_json@1
-orust fetch
+orust fetch [--offline]
 orust run
-orust update
+orust update [--offline]
 ```
 
 The CLI uses the ORust parser, emitter, diagnostics, and runtime crates. See

@@ -6,6 +6,8 @@ use std::{
     process::{Command, ExitCode},
 };
 
+const RUNTIME_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn write_generated_project_kind(
     program: &orust_syntax::Program,
     library: bool,
@@ -32,10 +34,11 @@ fn write_generated_project_kind_at(
     } else {
         ""
     };
-    let runtime_path = runtime_crate_path()?;
     fs::write(
         project.join("Cargo.toml"),
-        format!("[workspace]\n\n[package]\nname = \"orust-generated\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\norust-runtime = {{ path = \"{}\" }}\n", runtime_path.display()),
+        format!(
+            "[workspace]\n\n[package]\nname = \"orust-generated\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\norust-runtime = \"={RUNTIME_VERSION}\"\n"
+        ),
     )
     .map_err(|error| error.to_string())?;
     let stale_target = if library { "main.rs" } else { "lib.rs" };
@@ -202,7 +205,7 @@ fn render_doc_site(program: &orust_syntax::Program, title: &str) -> String {
 fn eject_project(source_path: &str, output_dir: &std::path::Path) -> Result<(), String> {
     let source = fs::read_to_string(source_path).map_err(|error| error.to_string())?;
     let program = parse(&source).map_err(|error| error.to_string())?;
-    let runtime_path = runtime_crate_path()?;
+    let (runtime_dependency, _) = runtime_dependency_manifest();
     let has_main = program.items.iter().any(|item| {
         matches!(
             &item.node,
@@ -219,8 +222,7 @@ fn eject_project(source_path: &str, output_dir: &std::path::Path) -> Result<(), 
     fs::write(
         output_dir.join("Cargo.toml"),
         format!(
-            "[workspace]\n\n[package]\nname = \"orust-ejected\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\norust-runtime = {{ path = \"{}\" }}\n",
-            runtime_path.display()
+            "[workspace]\n\n[package]\nname = \"orust-ejected\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\n{runtime_dependency}"
         ),
     )
     .map_err(|error| error.to_string())?;
@@ -305,7 +307,7 @@ fn compile_doc_example(
 ) -> Result<(), String> {
     let project = PathBuf::from("target/orust-doc-tests").join(index.to_string());
     fs::create_dir_all(project.join("src")).map_err(|error| error.to_string())?;
-    let runtime = runtime_crate_path()?;
+    let (runtime_dependency, _) = runtime_dependency_manifest();
     let manifest = project.join("Cargo.toml");
     for stale_name in ["main.rs", "lib.rs"] {
         let stale = project.join("src").join(stale_name);
@@ -320,8 +322,7 @@ fn compile_doc_example(
     fs::write(
         &manifest,
         format!(
-            "[workspace]\n\n[package]\nname = \"orust-doc-test-{index}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\norust-runtime = {{ path = {:?} }}\n",
-            runtime.to_string_lossy()
+            "[workspace]\n\n[package]\nname = \"orust-doc-test-{index}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n{runtime_dependency}"
         ),
     )
     .map_err(|error| error.to_string())?;
@@ -344,16 +345,13 @@ fn compile_doc_example(
 }
 
 fn runtime_crate_path() -> Result<PathBuf, String> {
+    // A checkout may use its local runtime for compiler development. Installed
+    // binaries must use the published, pinned runtime instead; otherwise a
+    // generated project would depend on ~/.orust and break after uninstall.
     let candidates = env::current_dir()
         .ok()
         .into_iter()
-        .flat_map(|cwd| cwd.ancestors().map(PathBuf::from).collect::<Vec<_>>())
-        .chain(env::current_exe().ok().into_iter().flat_map(|executable| {
-            executable
-                .ancestors()
-                .map(PathBuf::from)
-                .collect::<Vec<_>>()
-        }));
+        .flat_map(|cwd| cwd.ancestors().map(PathBuf::from).collect::<Vec<_>>());
     let runtime = candidates
         .flat_map(|path| {
             [path.join("runtime"), path.join("crates/orust-runtime")]
@@ -365,6 +363,16 @@ fn runtime_crate_path() -> Result<PathBuf, String> {
             String::from("could not locate runtime/Cargo.toml or crates/orust-runtime/Cargo.toml")
         })?;
     fs::canonicalize(runtime).map_err(|error| error.to_string())
+}
+
+fn runtime_dependency_manifest() -> (String, Option<PathBuf>) {
+    match runtime_crate_path() {
+        Ok(path) => (
+            format!("orust-runtime = {{ path = \"{}\" }}\n", path.display()),
+            Some(path),
+        ),
+        Err(_) => (format!("orust-runtime = \"={RUNTIME_VERSION}\"\n"), None),
+    }
 }
 
 fn starter_manifest(library: bool, workspace: bool) -> String {
@@ -379,8 +387,7 @@ fn starter_manifest(library: bool, workspace: bool) -> String {
         ""
     };
     format!(
-        "{workspace_header}[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target}\n\n[dependencies]\n{}\n",
-        "orust-runtime = \"0.1.2\""
+        "{workspace_header}[package]\nname = \"orust-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target}\n\n[dependencies]\norust-runtime = \"={RUNTIME_VERSION}\"\n"
     )
 }
 
@@ -813,6 +820,27 @@ fn explain_code(code: &str) -> Option<&'static str> {
     }
 }
 
+fn print_help() {
+    println!(
+        "ORust {}\n\nUsage:\n  orust new <directory> [--lib | --workspace]\n  orust run [file.or|main.rs] [--features <list>] [--offline]\n  orust check [file.or|main.rs] [--features <list>] [--offline]\n  orust build [file.or|main.rs] [--features <list>] [--offline]\n  orust test [file.or] [--features <list>] [--offline]\n  orust emit <file.or> [--comments|--no-comments]\n  orust format <file.or> [--dry-run]\n  orust lint <file.or> [--features <list>] [--offline]\n  orust eject <file.or> [--out <directory>]\n  orust add <crate[@version]>\n  orust fetch [--offline] [--locked]\n  orust update [--offline] [--locked]\n  orust doctor\n  orust explain <OR-code-or-rustc-code>\n\nOptions:\n  -V, --version  Show the ORust version\n  -h, --help     Show this help\n\nGenerated Rust is written to target/rust. Cargo and rustc are required to\ncheck, build, or run an ORust project.",
+        RUNTIME_VERSION
+    );
+}
+
+fn cargo_is_available() -> bool {
+    Command::new("cargo")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn report_missing_cargo() {
+    eprintln!("error: cargo was not found on PATH");
+    eprintln!("ORust needs Rust and Cargo to check, build, test, or run projects.");
+    eprintln!("Install Rust with: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh");
+    eprintln!("Then restart your shell and run `orust doctor`.");
+}
+
 fn add_dependency(spec: &str) -> Result<PathBuf, String> {
     let mut root = env::current_dir().map_err(|error| error.to_string())?;
     let manifest: Option<PathBuf> = loop {
@@ -873,7 +901,14 @@ fn project_manifest_from_current_dir() -> Result<PathBuf, String> {
     }
 }
 
-fn run_cargo_dependency_command(operation: &str) -> ExitCode {
+fn run_cargo_dependency_command(operation: &str, flags: &[String]) -> ExitCode {
+    for flag in flags {
+        if flag != "--offline" && flag != "--locked" {
+            eprintln!("error: unknown option `{flag}` for `orust {operation}`");
+            eprintln!("usage: orust {operation} [--offline] [--locked]");
+            return ExitCode::from(2);
+        }
+    }
     let manifest = match project_manifest_from_current_dir() {
         Ok(manifest) => manifest,
         Err(error) => {
@@ -883,6 +918,7 @@ fn run_cargo_dependency_command(operation: &str) -> ExitCode {
     };
     let mut command = Command::new("cargo");
     command.args([operation, "--manifest-path", manifest.to_str().unwrap()]);
+    command.args(flags);
     match command.status() {
         Ok(status) if status.success() => ExitCode::SUCCESS,
         Ok(status) => status
@@ -1291,7 +1327,12 @@ fn clear_generated_source_tree(source: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-fn cargo_command(operation: &str, manifest: &std::path::Path, features: Option<&str>) -> Command {
+fn cargo_command(
+    operation: &str,
+    manifest: &std::path::Path,
+    features: Option<&str>,
+    offline: bool,
+) -> Command {
     let mut command = Command::new("cargo");
     if operation == "run" {
         command.args(["run", "--quiet"]);
@@ -1303,6 +1344,9 @@ fn cargo_command(operation: &str, manifest: &std::path::Path, features: Option<&
     command.args(["--manifest-path", manifest.to_str().unwrap()]);
     if let Some(features) = features {
         command.args(["--features", features]);
+    }
+    if offline {
+        command.arg("--offline");
     }
     command
 }
@@ -1364,6 +1408,7 @@ fn run_native_project(
     command_name: &str,
     source_path: &std::path::Path,
     features: Option<&str>,
+    offline: bool,
 ) -> ExitCode {
     let Some(manifest) = project_manifest_for(source_path) else {
         eprintln!(
@@ -1372,7 +1417,7 @@ fn run_native_project(
         );
         return ExitCode::FAILURE;
     };
-    match cargo_command(command_name, &manifest, features).output() {
+    match cargo_command(command_name, &manifest, features, offline).output() {
         Ok(output) if output.status.success() => {
             if matches!(command_name, "check" | "build" | "test") {
                 println!("ok: {}", source_path.display());
@@ -1422,7 +1467,7 @@ fn copy_generated_binary(project: &std::path::Path, source_path: &std::path::Pat
     }
 }
 
-fn lint_path(path: &str, features: Option<&str>) -> ExitCode {
+fn lint_path(path: &str, features: Option<&str>, offline: bool) -> ExitCode {
     let source_path = std::path::Path::new(path);
     let source = match fs::read_to_string(source_path) {
         Ok(source) => source,
@@ -1449,7 +1494,8 @@ fn lint_path(path: &str, features: Option<&str>) -> ExitCode {
     };
     let result = match generated {
         Ok((project, generated)) => {
-            let result = cargo_command("check", &project.join("Cargo.toml"), features).output();
+            let result =
+                cargo_command("check", &project.join("Cargo.toml"), features, offline).output();
             match result {
                 Ok(output) if output.status.success() => {
                     println!("ok: {path}");
@@ -1577,7 +1623,7 @@ fn write_generated_project_tree_at(
         }
         fs::copy(file, destination).map_err(|e| e.to_string())?;
     }
-    let runtime_path = runtime_crate_path()?;
+    let (runtime_dependency, runtime_path) = runtime_dependency_manifest();
     let target_section = if library {
         "[lib]\npath = \"src/lib.rs\"\n\n"
     } else {
@@ -1627,17 +1673,17 @@ fn write_generated_project_tree_at(
     let runtime_dependency = if cargo_declares_runtime(config_text.as_deref()) {
         String::new()
     } else {
-        format!(
-            "orust-runtime = {{ path = \"{}\" }}\n",
-            runtime_path.display()
-        )
+        runtime_dependency
     };
     let manifest = format!("[workspace]{workspace_dependency_section}\n\n[package]\nname = \"{package_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}{feature_section}[dependencies]\n{runtime_dependency}{}{dev_dependency_section}{build_dependency_section}{target_dependency_section}{patch_section}", cargo_dependency_lines(config_text.as_deref()));
     fs::write(project.join("Cargo.toml"), manifest).map_err(|e| e.to_string())?;
-    if let Some(workspace_root) = runtime_path.parent().and_then(|path| path.parent()) {
-        let lock = workspace_root.join("Cargo.lock");
-        if lock.exists() {
-            fs::copy(lock, project.join("Cargo.lock")).map_err(|e| e.to_string())?;
+    if let Some(runtime_path) = runtime_path {
+        let workspace_root = runtime_path.parent().and_then(|path| path.parent());
+        if let Some(workspace_root) = workspace_root {
+            let lock = workspace_root.join("Cargo.lock");
+            if lock.exists() {
+                fs::copy(lock, project.join("Cargo.lock")).map_err(|e| e.to_string())?;
+            }
         }
     }
     let mut root = String::new();
@@ -1934,7 +1980,66 @@ fn scan_expr(
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     let command = args.next().unwrap_or_default();
+    if matches!(command.as_str(), "--version" | "-V" | "version") {
+        println!("orust {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+    if matches!(command.as_str(), "--help" | "-h" | "help" | "") {
+        print_help();
+        return ExitCode::SUCCESS;
+    }
+    if command == "doctor" {
+        let mut healthy = true;
+        println!("orust {}", RUNTIME_VERSION);
+        for tool in ["cargo", "rustc"] {
+            match Command::new(tool).arg("--version").output() {
+                Ok(output) if output.status.success() => {
+                    print!("{}", String::from_utf8_lossy(&output.stdout));
+                }
+                _ => {
+                    healthy = false;
+                    eprintln!("{tool} not found. ORust needs Rust to build projects.");
+                    eprintln!("Install it with: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh");
+                }
+            }
+        }
+        for tool in ["orust-lsp", "rust-analyzer"] {
+            match Command::new(tool).arg("--version").output() {
+                Ok(output) if output.status.success() => {
+                    print!("{}", String::from_utf8_lossy(&output.stdout));
+                }
+                _ => {
+                    eprintln!("warning: optional tool `{tool}` was not found on PATH");
+                    if tool == "orust-lsp" {
+                        eprintln!(
+                            "  Install the ORust release tools or set `orust.lspPath` in VS Code."
+                        );
+                    } else {
+                        eprintln!("  Install it with `rustup component add rust-analyzer` for Rust-in-ORust editor support.");
+                    }
+                }
+            }
+        }
+        return if healthy {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
+    if matches!(
+        command.as_str(),
+        "check" | "build" | "run" | "test" | "lint" | "doc" | "fetch" | "update"
+    ) && !cargo_is_available()
+    {
+        report_missing_cargo();
+        return ExitCode::FAILURE;
+    }
     let mut path = args.next();
+    let mut offline = false;
+    if path.as_deref() == Some("--offline") {
+        offline = true;
+        path = args.next();
+    }
     let mut library = command == "build" && path.as_deref() == Some("--lib");
     if library {
         path = args.next();
@@ -1964,6 +2069,7 @@ fn main() -> ExitCode {
                     }
                 }
                 "--verbose" => verbose = true,
+                "--offline" if command != "emit" => offline = true,
                 "--comments" if command == "emit" => include_comments = true,
                 "--no-comments" if command == "emit" => include_comments = false,
                 "--doc" if command == "test" => doc_tests = true,
@@ -1984,7 +2090,12 @@ fn main() -> ExitCode {
         path = project_entry_for(&directory).map(|entry| entry.to_string_lossy().into_owned());
     }
     if matches!(command.as_str(), "fetch" | "update") {
-        return run_cargo_dependency_command(&command);
+        let mut flags = Vec::new();
+        if let Some(first) = path.take() {
+            flags.push(first);
+        }
+        flags.extend(args);
+        return run_cargo_dependency_command(&command, &flags);
     }
     if command == "new" {
         let Some(project) = path else {
@@ -2152,7 +2263,7 @@ fn main() -> ExitCode {
             eprintln!("usage: orust lint <file.or> [--features <list>]");
             return ExitCode::from(2);
         };
-        return lint_path(&source_path, cargo_features.as_deref());
+        return lint_path(&source_path, cargo_features.as_deref(), offline);
     }
     if matches!(command.as_str(), "todo" | "authors" | "doc") {
         let Some(source_path) = path else {
@@ -2176,6 +2287,7 @@ fn main() -> ExitCode {
         let mut format = "table".to_owned();
         let mut deny = false;
         let mut rustdoc = false;
+        let mut doc_offline = false;
         let mut index = 0;
         let flags = args.collect::<Vec<_>>();
         while index < flags.len() {
@@ -2194,6 +2306,10 @@ fn main() -> ExitCode {
                 }
                 "--rustdoc" if command == "doc" => {
                     rustdoc = true;
+                    index += 1;
+                }
+                "--offline" if command == "doc" => {
+                    doc_offline = true;
                     index += 1;
                 }
                 other => {
@@ -2217,14 +2333,17 @@ fn main() -> ExitCode {
                 };
                 match generated {
                     Ok((project, _)) => {
-                        let status = Command::new("cargo")
-                            .args([
-                                "doc",
-                                "--manifest-path",
-                                project.join("Cargo.toml").to_str().unwrap(),
-                                "--no-deps",
-                            ])
-                            .status();
+                        let mut cargo = Command::new("cargo");
+                        cargo.args([
+                            "doc",
+                            "--manifest-path",
+                            project.join("Cargo.toml").to_str().unwrap(),
+                            "--no-deps",
+                        ]);
+                        if doc_offline {
+                            cargo.arg("--offline");
+                        }
+                        let status = cargo.status();
                         return match status {
                             Ok(status) if status.success() => {
                                 println!("{}", project.join("target/doc").display());
@@ -2303,7 +2422,7 @@ fn main() -> ExitCode {
         "emit" | "check" | "build" | "run" | "test"
     ) || path.is_none()
     {
-        eprintln!("usage: orust <check|emit|build|run|test> [file.or|main.rs] [--features <list>]\n       orust format <file.or> [--dry-run]\n       orust lint <file.or> [--features <list>]\n       orust new <project-directory> [--lib | --workspace]\n       orust add <crate[@version]>\n       orust fetch\n       orust update\n       orust explain <OR-code-or-rustc-code>");
+        eprintln!("usage: orust <check|emit|build|run|test> [file.or|main.rs] [--features <list>] [--offline]\n       orust format <file.or> [--dry-run]\n       orust lint <file.or> [--features <list>] [--offline]\n       orust new <project-directory> [--lib | --workspace]\n       orust add <crate[@version>]\n       orust fetch [--offline] [--locked]\n       orust update [--offline] [--locked]\n       orust doctor\n       orust explain <OR-code-or-rustc-code>");
         return ExitCode::from(2);
     }
     let path = path.unwrap();
@@ -2312,6 +2431,7 @@ fn main() -> ExitCode {
             &command,
             std::path::Path::new(&path),
             cargo_features.as_deref(),
+            offline,
         );
     }
     if doc_tests {
@@ -2339,7 +2459,8 @@ fn main() -> ExitCode {
             }
             Ok((project, _generated)) => {
                 let manifest = project.join("Cargo.toml");
-                let result = cargo_command(&command, &manifest, cargo_features.as_deref()).output();
+                let result =
+                    cargo_command(&command, &manifest, cargo_features.as_deref(), offline).output();
                 return match result {
                     Ok(output) if output.status.success() => {
                         if matches!(command.as_str(), "run" | "build") {
@@ -2412,6 +2533,7 @@ fn main() -> ExitCode {
                         &command,
                         std::path::Path::new(manifest),
                         cargo_features.as_deref(),
+                        offline,
                     )
                     .output();
                     match result {
@@ -2497,7 +2619,7 @@ mod tests {
     fn new_projects_use_the_published_runtime() {
         let manifest = starter_manifest(false, false);
         assert!(manifest.contains("[[bin]]"));
-        assert!(manifest.contains("orust-runtime = \"0.1.2\""));
+        assert!(manifest.contains("orust-runtime = \"=0.1.3\""));
     }
 
     #[test]
