@@ -13,7 +13,7 @@ name = "orust"
 path = "src/main.rs"
 
 [dependencies]
-orust-syntax = { version = "0.1.10", path = "../orust-syntax" }
-orust-emit = { version = "0.1.10", path = "../orust-emit" }
-orust-diag = { version = "0.1.10", path = "../orust-diag" }
-orust-runtime = { version = "0.1.10", path = "../orust-runtime" }
+orust-syntax = { version = "0.1.11", path = "../orust-syntax" }
+orust-emit = { version = "0.1.11", path = "../orust-emit" }
+orust-diag = { version = "0.1.11", path = "../orust-diag" }
+orust-runtime = { version = "0.1.11", path = "../orust-runtime" }
