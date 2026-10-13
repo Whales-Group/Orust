@@ -1,42 +1,20 @@
-# ORust release and maintenance guide
+# ORust releases
 
-This is the operational guide for releasing ORust, testing changes, and
-upgrading an installation. The intended release flow is:
+This is the short version. There are two normal actions:
 
-```text
-edit -> format/check/test -> bump version -> tag -> GitHub Actions
-     -> platform archives + checksums -> user installer -> smoke test
-```
+1. release a new version;
+2. install or inspect an existing version.
 
-## What is versioned
+## Release a new version
 
-The Rust workspace has one shared version in the root `Cargo.toml`. It is used
-by the CLI, language server, runtime, parser, emitter, diagnostics, and the
-other Rust crates. The CLI and runtime must have the same release version:
+Use a new version every time. Never move or reuse a tag that already exists.
 
-```sh
-cargo pkgid -p orust-cli
-cargo pkgid -p orust-runtime
-```
+Replace `0.1.12` below with the next version you want to release.
 
-The VS Code extension is a separate package in `vscode-orust/package.json`.
-Changing the Rust compiler version does not automatically publish a new VS Code
-extension, and changing the extension version does not change the compiler.
-
-## Before releasing
-
-Start from a clean branch and inspect the current version and remotes:
+### 1. Make and test your changes
 
 ```sh
-git status --short
-git remote -v
-cargo pkgid -p orust-cli
-```
-
-Run the complete local verification suite. Use `--offline` only when all
-dependencies are already cached; CI runs the same checks with network access.
-
-```sh
+git status
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
@@ -46,103 +24,166 @@ cargo test --manifest-path conformance/Cargo.toml
 cargo test --manifest-path fuzz/Cargo.toml
 ```
 
-For a faster inner loop, use the affected package first:
+### 2. Update the version
 
 ```sh
-cargo test -p orust-syntax
-cargo test -p orust-emit
-cargo test -p orust-diag
-cargo test -p orust-cli --bin orust
-cargo test -p orust-cli --test modules
-cargo test -p orust-cli --test phase6_docs
-cargo test -p orust-cli --test runtime
-cargo test -p orust-lsp
+scripts/release.sh 0.1.12
 ```
 
-If the VS Code extension changed, run its checks from its own directory:
+Review what changed:
 
 ```sh
-cd vscode-orust
-npm install
-npm run check
-npm run compile
-cd ..
-```
-
-## Bump and publish a Rust release
-
-The release helper updates the shared workspace version and internal crate
-links. It runs formatting and `cargo check` unless told not to:
-
-```sh
-# Preview and review the changes first.
-scripts/release.sh patch
 git diff
-
-# Or use minor, major, or an exact version such as 1.0.0.
-scripts/release.sh minor
+cargo pkgid -p orust-cli
+cargo pkgid -p orust-runtime
 ```
 
-After reviewing the version diff and rerunning the release checks, commit and
-tag the release. The tag must be exactly `vX.Y.Z`:
+Both packages must report `0.1.12`.
+
+### 3. Commit and push `main`
 
 ```sh
-git add Cargo.toml Cargo.lock crates
-git commit -m "Release v0.1.9"
-git tag -a v0.1.9 -m "ORust v0.1.9"
-git push origin HEAD
-git push origin v0.1.9
+git add Cargo.toml Cargo.lock crates README.md docs scripts .github/workflows/ci.yml
+git commit -m "Prepare release v0.1.12"
+git push origin main
 ```
 
-The helper can perform those final actions, but use it only after reviewing
-the generated diff:
+Do not use `git add .` if you have personal files such as `.idea/` or local
+experiments in the repository.
+
+### 4. Publish the runtime
+
+The runtime must be published before users generate projects with this CLI.
 
 ```sh
-scripts/release.sh patch --commit --tag --push
+cargo publish -p orust-runtime --dry-run
+cargo publish -p orust-runtime
 ```
 
-Do not reuse a tag. If the tag or release is wrong, fix the source and publish
-a new patch version rather than moving a tag that users may already have
-downloaded.
+If Cargo says that the version already exists, do not publish it again. Use a
+new patch version instead.
 
-## What GitHub Actions does
-
-Pushing `vX.Y.Z` starts `.github/workflows/ci.yml`:
-
-1. `verify` runs formatting, Clippy, workspace tests, doctests, book checks,
-   and conformance tests.
-2. `release-binaries` builds `orust` and `orust-lsp` for macOS Apple Silicon,
-   macOS Intel, Linux x86_64, and Windows x86_64.
-3. Each archive contains the two binaries, the runtime source, a
-   `runtime-version.txt` file, `README.md`, and `LICENSE`.
-4. The workflow smoke-tests `orust --version`, `orust new`, and `orust check`.
-5. `release-checksums` creates `SHA256SUMS`.
-6. `github-release` publishes the archives and checksum file as a GitHub
-   Release with generated notes.
-
-Watch the workflow before announcing the release:
+### 5. Create and push the tag
 
 ```sh
-gh run list --workflow ci.yml --limit 5
-gh run watch <run-id>
+git tag -a v0.1.12 -m "ORust v0.1.12"
+git push origin v0.1.12
 ```
 
-If the workflow fails, fix the branch and create a new version. Do not tell
-users to install an archive from a failed or incomplete release.
+Pushing the tag starts GitHub Actions. Do not manually run the workflow for a
+release; a manual run usually uses `main` instead of the release tag.
 
-## How users install or upgrade
+### 6. Wait for GitHub Actions
 
-### macOS and Linux
+The workflow must pass:
 
-The binary installer detects the platform, downloads the latest release,
-verifies `SHA256SUMS`, and installs both `orust` and `orust-lsp`:
+- `verify`
+- all release-binary jobs
+- checksums
+- GitHub Release publication
+
+Open the repository's **Actions** tab. When it finishes, open
+**Releases → ORust v0.1.12 → Assets**.
+
+The release should contain archives for macOS ARM, macOS Intel, Linux, and
+Windows, plus `SHA256SUMS`.
+
+## If a release fails
+
+Do not push the same tag again and do not force-move the tag.
+
+1. Read the failed job's last red step.
+2. Fix the problem on `main`.
+3. Bump to a new patch version.
+4. Repeat the release steps with the new version.
+
+Example: if `v0.1.12` fails, fix `main` and release `v0.1.13`.
+
+Already-built artifacts from a failed workflow are not a completed release.
+Only use archives attached to a successful GitHub Release.
+
+## Use an existing release or tag
+
+There are three different operations. Choose the one you need.
+
+Remember the spelling:
+
+- Git tag: `v0.1.11`
+- Installer version: `0.1.11` (without `v`)
+
+The installer changes the CLI on your machine. Running `orust new` or
+`orust check` then creates or regenerates a project with that CLI's matching
+runtime.
+
+### A. Install an old ORust version
+
+This changes the `orust` and `orust-lsp` tools on your computer. It does not
+change any project.
+
+On macOS or Linux:
+
+```sh
+ORUST_VERSION=0.1.11 curl --proto '=https' --tlsv1.2 -sSf \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:ORUST_VERSION = '0.1.11'
+irm https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.ps1 | iex
+```
+
+Check the installed tool:
+
+```sh
+orust --version
+```
+
+It should print `orust 0.1.11`.
+
+### B. Create a new project with an old version
+
+Install the old ORust version first using section A. Then create the project:
+
+```sh
+orust new my-old-project
+cd my-old-project
+orust check
+```
+
+Because the old CLI creates the project, its `Cargo.toml` points to the
+matching old `orust-runtime` version.
+
+### C. Change an existing project to an old runtime
+
+First install the old CLI using section A. Then, from the existing project,
+run the old CLI again:
+
+```sh
+cd my-existing-project
+orust check
+```
+
+The old CLI regenerates `target/rust/Cargo.toml` with the matching old
+`orust-runtime` version and Cargo refreshes the generated lockfile.
+
+Do not edit `target/rust/Cargo.toml` as a permanent fix; the CLI regenerates
+that file. The installed CLI version is what selects the generated runtime
+version.
+
+`orust update` only runs Cargo's normal dependency update. It does not change
+the ORust version. Use the old installer first when you need an old ORust
+version.
+
+### Install the latest release on macOS or Linux
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
   https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
 ```
 
-Restart the shell or reload the PATH, then verify:
+Then open a new shell and check it:
 
 ```sh
 orust --version
@@ -150,109 +191,59 @@ orust-lsp --version
 orust doctor
 ```
 
-To install a specific release instead of the latest one:
+### Install on Windows
 
-```sh
-ORUST_VERSION=0.1.9 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
-```
-
-The active binaries are in `~/.orust/bin`; versioned files are stored in
-`~/.orust/versions/<version>`. Existing ORust projects keep their runtime
-dependency in `Cargo.toml`, so Cargo uses the version declared by that project.
-Run `orust update` when intentionally moving a project's dependency lockfile
-to a newer compatible runtime.
-
-### Windows PowerShell
+Latest version:
 
 ```powershell
 irm https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.ps1 | iex
+```
+
+Specific version:
+
+```powershell
+$env:ORUST_VERSION = '0.1.11'
+irm https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.ps1 | iex
+```
+
+### Inspect or build the source at an old Git tag
+
+```sh
+git fetch --tags origin
+git switch --detach v0.1.11
+cargo test --workspace
+```
+
+This changes the source checkout, not the installed `orust` command. To use
+the old source to build and install the tools, run:
+
+```sh
+bash scripts/install.sh --non-interactive
+```
+
+Return to normal development afterward:
+
+```sh
+git switch main
+git pull origin main
+```
+
+## Version rules
+
+- Rust crates in the workspace share one version.
+- `orust-cli` and `orust-runtime` must have the same version.
+- Every release tag is `vX.Y.Z`.
+- The tag version must match the workspace version without the `v`.
+- A published crates.io version cannot be replaced.
+- An existing Git tag should not be moved.
+- The VS Code extension is released separately from the Rust crates.
+
+## Quick checks after installation
+
+```sh
 orust --version
 orust doctor
+orust new my-project
+cd my-project
+orust check
 ```
-
-For a pinned release:
-
-```powershell
-$env:ORUST_VERSION = '0.1.9'
-irm https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.ps1 | iex
-```
-
-Open a new PowerShell window after installation so the updated user PATH is
-loaded.
-
-### Contributor/source installation
-
-Users should use the binary installer. Contributors who are changing ORust
-itself can build from source:
-
-```sh
-git clone https://github.com/Whales-Group/Orust.git
-cd Orust
-bash scripts/install.sh
-```
-
-This path requires Rust and Cargo. It is useful for testing an unreleased
-change, but it is not the recommended end-user installation path.
-
-## Test matrix by component
-
-| Area | Fast test | Full/extra verification |
-| --- | --- | --- |
-| Syntax/parser | `cargo test -p orust-syntax` | `cargo bench -p orust-syntax` when parser performance changes |
-| Lowering | `cargo test -p orust-lower` | workspace tests for cross-crate behavior |
-| Rust emitter | `cargo test -p orust-emit` | golden, recursive, quality, and span tests |
-| Diagnostics | `cargo test -p orust-diag` | diagnostic fixtures and JSON compiler-span tests |
-| CLI | `cargo test -p orust-cli --bin orust` | modules, docs, runtime, and conformance tests |
-| Runtime | `cargo test -p orust-runtime` | CLI runtime acceptance tests |
-| LSP | `cargo test -p orust-lsp` | launch `orust-lsp` and exercise an `.or` file in VS Code |
-| VS Code | `npm run check && npm run compile` in `vscode-orust` | press `F5` and test diagnostics, hover, formatting, run, and debug |
-| Documentation | `bash scripts/check-book.sh` | `cargo test --workspace --doc` |
-| Release artifacts | workflow smoke test | download archive and verify checksum on each supported OS |
-
-For a generated project smoke test after building the CLI:
-
-```sh
-tmp_dir="$(mktemp -d)"
-orust new "$tmp_dir/example"
-(cd "$tmp_dir/example" && orust check)
-```
-
-If the CLI is installed globally, use `orust new` and `orust check` instead.
-
-## Release acceptance checklist
-
-Before announcing a release, confirm:
-
-- [ ] `Cargo.toml` and `Cargo.lock` contain the intended version.
-- [ ] `orust-cli` and `orust-runtime` report the same version.
-- [ ] The VS Code extension version was updated separately if needed.
-- [ ] Format, Clippy, tests, doctests, book, conformance, and fuzz smoke pass.
-- [ ] The tag is `vX.Y.Z` and matches the workspace version exactly.
-- [ ] All GitHub Actions release jobs passed.
-- [ ] `SHA256SUMS` is attached to the GitHub Release.
-- [ ] macOS, Linux, and Windows archives contain both executables.
-- [ ] A clean-machine install succeeds on at least one Unix system and
-      Windows when available.
-- [ ] `orust --version`, `orust doctor`, `orust new`, and `orust check` work.
-- [ ] The release notes mention breaking syntax, runtime, or CLI changes.
-
-## Troubleshooting and rollback
-
-`orust doctor` is the first diagnostic command. It checks the ORust version,
-Cargo, rustc, and optional tooling. If Cargo is missing, install Rust through
-[rustup](https://rustup.rs) and reopen the shell.
-
-If an upgrade is bad on macOS/Linux, select an older archive explicitly:
-
-```sh
-ORUST_VERSION=0.1.2 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
-```
-
-Then verify `orust --version`. On Windows, set `ORUST_VERSION` to the known
-good release and rerun `install.ps1`.
-
-For a project that fails after a runtime change, inspect the generated project
-under `target/rust`, run `orust emit <file.or>`, and use `orust check --offline`
-to distinguish a network problem from a compiler or runtime problem.

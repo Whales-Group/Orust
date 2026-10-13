@@ -9,4 +9,4 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-orust-syntax = { version = "0.1.11", path = "../orust-syntax" }
+orust-syntax = { version = "0.1.12", path = "../orust-syntax" }
