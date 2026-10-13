@@ -80,9 +80,10 @@ jobs:
         shell: bash
         run: |
           expected="${GITHUB_REF_NAME#v}"
-          actual="$(cargo pkgid -p orust-cli | sed -E 's/.*@//')"
+          actual="$(cargo pkgid -p orust-cli | sed -E 's/.*[@#]//')"
+          runtime_actual="$(cargo pkgid -p orust-runtime | sed -E 's/.*[@#]//')"
+          printf 'expected=%s cli=%s runtime=%s\n' "${expected}" "${actual}" "${runtime_actual}"
           test "${actual}" = "${expected}"
-          runtime_actual="$(cargo pkgid -p orust-runtime | sed -E 's/.*@//')"
           test "${runtime_actual}" = "${expected}"
       - name: Build release binaries
         run: cargo build --release --target ${{ matrix.target }} -p orust-cli -p orust-lsp
