@@ -266,6 +266,16 @@ install_workspace_binary() {
 
 prepare_runtime() {
     local temp_dir
+    local runtime_dependency='orust-runtime = "*"'
+    local workspace_version=""
+
+    if [[ -n "${WORKSPACE_DIR}" && -f "${WORKSPACE_DIR}/Cargo.toml" ]]; then
+        workspace_version="$(sed -nE 's/^version = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "${WORKSPACE_DIR}/Cargo.toml" | head -n 1)"
+    fi
+    if [[ -n "${workspace_version}" ]]; then
+        runtime_dependency="orust-runtime = \"=${workspace_version}\""
+    fi
+
     temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/orust-runtime.XXXXXX")"
     trap 'rm -rf "${temp_dir}"' EXIT
     mkdir -p "${temp_dir}/src"
@@ -276,7 +286,7 @@ prepare_runtime() {
         'edition = "2021"' \
         '' \
         '[dependencies]' \
-        'orust-runtime = "=0.1.9"' \
+        "${runtime_dependency}" \
         > "${temp_dir}/Cargo.toml"
     printf '%s\n' 'fn main() {}' > "${temp_dir}/src/main.rs"
     say "Preparing the published orust-runtime crate"

@@ -88,10 +88,10 @@ tag the release. The tag must be exactly `vX.Y.Z`:
 
 ```sh
 git add Cargo.toml Cargo.lock crates
-git commit -m "Release v0.1.3"
-git tag -a v0.1.3 -m "ORust v0.1.3"
+git commit -m "Release v0.1.9"
+git tag -a v0.1.9 -m "ORust v0.1.9"
 git push origin HEAD
-git push origin v0.1.3
+git push origin v0.1.9
 ```
 
 The helper can perform those final actions, but use it only after reviewing
@@ -153,7 +153,7 @@ orust doctor
 To install a specific release instead of the latest one:
 
 ```sh
-ORUST_VERSION=0.1.3 curl --proto '=https' --tlsv1.2 -sSf \
+ORUST_VERSION=0.1.9 curl --proto '=https' --tlsv1.2 -sSf \
   https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
 ```
 
@@ -174,7 +174,7 @@ orust doctor
 For a pinned release:
 
 ```powershell
-$env:ORUST_VERSION = '0.1.3'
+$env:ORUST_VERSION = '0.1.9'
 irm https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.ps1 | iex
 ```
 
