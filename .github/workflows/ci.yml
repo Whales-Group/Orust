@@ -136,11 +136,13 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
+          repo_root="$(pwd -P)"
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            cli="target/${TARGET}/release/orust.exe"
+            cli="${repo_root}/target/${TARGET}/release/orust.exe"
           else
-            cli="target/${TARGET}/release/orust"
+            cli="${repo_root}/target/${TARGET}/release/orust"
           fi
+          test -x "${cli}"
           test "$("${cli}" --version)" = "orust ${version}"
           smoke_dir="${RUNNER_TEMP}/orust-smoke"
           "${cli}" new "${smoke_dir}"
