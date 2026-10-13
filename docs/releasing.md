@@ -139,7 +139,7 @@ verifies `SHA256SUMS`, and installs both `orust` and `orust-lsp`:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install-binary.sh | bash
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
 ```
 
 Restart the shell or reload the PATH, then verify:
@@ -154,7 +154,7 @@ To install a specific release instead of the latest one:
 
 ```sh
 ORUST_VERSION=0.1.3 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install-binary.sh | bash
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
 ```
 
 The active binaries are in `~/.orust/bin`; versioned files are stored in
@@ -166,7 +166,7 @@ to a newer compatible runtime.
 ### Windows PowerShell
 
 ```powershell
-irm https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.ps1 | iex
 orust --version
 orust doctor
 ```
@@ -175,7 +175,7 @@ For a pinned release:
 
 ```powershell
 $env:ORUST_VERSION = '0.1.3'
-irm https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.ps1 | iex
 ```
 
 Open a new PowerShell window after installation so the updated user PATH is
@@ -187,7 +187,7 @@ Users should use the binary installer. Contributors who are changing ORust
 itself can build from source:
 
 ```sh
-git clone https://github.com/Jesse-Dan/Orust.git
+git clone https://github.com/Whales-Group/Orust.git
 cd Orust
 bash scripts/install.sh
 ```
@@ -247,7 +247,7 @@ If an upgrade is bad on macOS/Linux, select an older archive explicitly:
 
 ```sh
 ORUST_VERSION=0.1.2 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install-binary.sh | bash
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
 ```
 
 Then verify `orust --version`. On Windows, set `ORUST_VERSION` to the known

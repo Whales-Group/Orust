@@ -21,7 +21,7 @@ For a handwritten Rust project that uses runtime APIs directly, add:
 
 ```toml
 [dependencies]
-orust-runtime = "=0.1.3"
+orust-runtime = "=0.1.9"
 ```
 
 Example:

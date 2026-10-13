@@ -28,14 +28,14 @@ do not need Git or a Rust toolchain just to install ORust:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install-binary.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh \
   | bash
 ```
 
 On Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.ps1 | iex
 ```
 
 The installer detects macOS or Linux, verifies the archive with the release
@@ -95,7 +95,7 @@ This asks which components to install:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash
 ```
 
@@ -105,7 +105,7 @@ This installs the CLI, runtime, LSP, and Rust Analyzer when available:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --all --non-interactive
 ```
 
@@ -116,7 +116,7 @@ update:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --update
 ```
 
@@ -126,7 +126,7 @@ This updates the CLI, runtime, LSP, and rustplain helpers without prompts:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --update --non-interactive
 ```
 
@@ -141,7 +141,7 @@ This asks which installed components to remove:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --uninstall
 ```
 
@@ -151,7 +151,7 @@ This removes all installed ORust binaries without prompts:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --uninstall --all --non-interactive
 ```
 
@@ -160,17 +160,17 @@ curl --proto '=https' --tlsv1.2 -sSf \
 ```sh
 # CLI and runtime
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --cli
 
 # LSP and runtime
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --lsp
 
 # Runtime only
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install.sh \
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install.sh \
   | bash -s -- --runtime
 ```
 
@@ -253,7 +253,7 @@ orust run
 
 ORust generates Rust under `target/rust/`. Cargo compiles that Rust and runs
 the resulting binary. New projects contain a standard `Cargo.toml` with
-`orust-runtime = "=0.1.3"`; Cargo fetches the published runtime automatically when
+`orust-runtime = "=0.1.9"`; Cargo fetches the published runtime automatically when
 the project is first built. The runtime is a project dependency, not a global
 command.
 

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 # Install a published ORust release without Git or a local Rust build.
-$Repository = if ($env:ORUST_REPOSITORY) { $env:ORUST_REPOSITORY } else { 'Jesse-Dan/Orust' }
+$Repository = if ($env:ORUST_REPOSITORY) { $env:ORUST_REPOSITORY } else { 'Whales-Group/Orust' }
 $Version = if ($env:ORUST_VERSION) { $env:ORUST_VERSION } else { 'latest' }
 $OrustHome = if ($env:ORUST_HOME) { $env:ORUST_HOME } else { Join-Path $env:USERPROFILE '.orust' }
 

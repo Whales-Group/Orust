@@ -12,7 +12,7 @@ Install the binary with the ORust installer or, when published, with:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf \
-  https://raw.githubusercontent.com/Jesse-Dan/Orust/main/scripts/install-binary.sh | bash
+  https://raw.githubusercontent.com/Whales-Group/Orust/main/scripts/install-binary.sh | bash
 ```
 
 The installer asks whether to install `orust-lsp`. To install only the

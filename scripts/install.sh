@@ -3,7 +3,7 @@ set -eu
 
 # Public ORust installer. It is safe to run from curl | bash because prompts
 # use /dev/tty when the script itself is being read from standard input.
-ORUST_REPOSITORY="${ORUST_REPOSITORY:-https://github.com/Jesse-Dan/Orust.git}"
+ORUST_REPOSITORY="${ORUST_REPOSITORY:-https://github.com/Whales-Group/Orust.git}"
 ORUST_REF="${ORUST_REF:-main}"
 CARGO_COMMAND="${CARGO_COMMAND:-cargo}"
 RUSTUP_COMMAND="${RUSTUP_COMMAND:-rustup}"
@@ -276,7 +276,7 @@ prepare_runtime() {
         'edition = "2021"' \
         '' \
         '[dependencies]' \
-        'orust-runtime = "=0.1.3"' \
+        'orust-runtime = "=0.1.9"' \
         > "${temp_dir}/Cargo.toml"
     printf '%s\n' 'fn main() {}' > "${temp_dir}/src/main.rs"
     say "Preparing the published orust-runtime crate"

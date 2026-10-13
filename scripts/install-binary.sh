@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Install a published ORust release without requiring Git or a local Rust build.
-ORUST_REPOSITORY="${ORUST_REPOSITORY:-Jesse-Dan/Orust}"
+ORUST_REPOSITORY="${ORUST_REPOSITORY:-Whales-Group/Orust}"
 ORUST_VERSION="${ORUST_VERSION:-latest}"
 ORUST_HOME="${ORUST_HOME:-${HOME}/.orust}"
 ORUST_BIN="${ORUST_HOME}/bin"

@@ -19,8 +19,8 @@ members = [
 
 
 [workspace.package]
-version = "0.1.8"
+version = "0.1.9"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/Jesse-Dan/Orust"
-homepage = "https://github.com/Jesse-Dan/Orust"
+repository = "https://github.com/Whales-Group/Orust"
+homepage = "https://github.com/Whales-Group/Orust"
