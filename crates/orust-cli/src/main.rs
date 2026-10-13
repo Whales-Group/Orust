@@ -8,6 +8,16 @@ use std::{
 
 const RUNTIME_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+fn write_generated_file(path: &std::path::Path, contents: impl AsRef<[u8]>) -> Result<(), String> {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("could not name generated file {}", path.display()))?;
+    let temporary = path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()));
+    fs::write(&temporary, contents).map_err(|error| error.to_string())?;
+    fs::rename(&temporary, path).map_err(|error| error.to_string())
+}
+
 fn write_generated_project_kind(
     program: &orust_syntax::Program,
     library: bool,
@@ -35,13 +45,12 @@ fn write_generated_project_kind_at(
     } else {
         ""
     };
-    fs::write(
-        project.join("Cargo.toml"),
+    write_generated_file(
+        &project.join("Cargo.toml"),
         format!(
             "[workspace]\n\n[package]\nname = \"orust-generated\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}[dependencies]\n{runtime_dependency}"
         ),
-    )
-    .map_err(|error| error.to_string())?;
+    )?;
     let stale_target = if library { "main.rs" } else { "lib.rs" };
     let stale_target = project.join("src").join(stale_target);
     if stale_target.exists() {
@@ -327,8 +336,7 @@ fn compile_doc_example(
         ),
     )
     .map_err(|error| error.to_string())?;
-    fs::write(project.join("src/main.rs"), orust_emit::emit(program))
-        .map_err(|error| error.to_string())?;
+    write_generated_file(&project.join("src/main.rs"), orust_emit::emit(program))?;
 
     let output = Command::new("cargo")
         .args(["test", "--offline", "--manifest-path"])
@@ -1677,7 +1685,7 @@ fn write_generated_project_tree_at(
         runtime_dependency
     };
     let manifest = format!("[workspace]{workspace_dependency_section}\n\n[package]\nname = \"{package_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{target_section}{feature_section}[dependencies]\n{runtime_dependency}{}{dev_dependency_section}{build_dependency_section}{target_dependency_section}{patch_section}", cargo_dependency_lines(config_text.as_deref()));
-    fs::write(project.join("Cargo.toml"), manifest).map_err(|e| e.to_string())?;
+    write_generated_file(&project.join("Cargo.toml"), manifest)?;
     if let Some(runtime_path) = runtime_path {
         let workspace_root = runtime_path.parent().and_then(|path| path.parent());
         if let Some(workspace_root) = workspace_root {
@@ -2620,7 +2628,10 @@ mod tests {
     fn new_projects_use_the_published_runtime() {
         let manifest = starter_manifest(false, false);
         assert!(manifest.contains("[[bin]]"));
-        assert!(manifest.contains("orust-runtime = \"=0.1.3\""));
+        assert!(manifest.contains(&format!(
+            "orust-runtime = \"={}\"",
+            env!("CARGO_PKG_VERSION")
+        )));
     }
 
     #[test]
