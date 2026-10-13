@@ -15,6 +15,6 @@ fn speak(&self) -> String {
 }
 fn main() -> () {
     orust_runtime::install_panic_hook();
-    let dog = Dog::new();
+    let mut dog = Dog::new();
     println!("{}", dog.speak());
 }

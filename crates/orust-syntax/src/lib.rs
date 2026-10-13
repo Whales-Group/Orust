@@ -728,6 +728,7 @@ pub enum Stmt {
         name: String,
         initializer: Expr,
         declared_type: Option<String>,
+        mutable: bool,
     },
     PatternVar {
         pattern: String,
@@ -1248,7 +1249,7 @@ fn lex(source: &str) -> Result<Lexed, ParseError> {
                 | "catch" | "extends" | "enum" | "error" | "throw" | "test" | "factory"
                 | "switch" | "case" | "default" | "extension" | "on" | "drop" | "import"
                 | "export" | "as" | "show" | "hide" | "private" | "internal" | "typedef"
-                | "type" | "when" => TokenKind::Keyword(s.into()),
+                | "final" | "type" | "when" => TokenKind::Keyword(s.into()),
                 _ => TokenKind::Ident(s.into()),
             };
             out.push(Token {
@@ -3615,8 +3616,19 @@ impl Parser {
             }
             self.bump();
             Ok(Stmt::Switch { value, cases })
-        } else if self.is(&TokenKind::Keyword("var".into())) {
-            self.bump();
+        } else if self.is(&TokenKind::Keyword("var".into()))
+            || (self.is(&TokenKind::Keyword("final".into()))
+                && self.tokens.get(self.pos + 1).map(|token| &token.kind)
+                    == Some(&TokenKind::Keyword("var".into())))
+        {
+            let mutable = if self.is(&TokenKind::Keyword("final".into())) {
+                self.bump();
+                self.bump();
+                false
+            } else {
+                self.bump();
+                true
+            };
             if self.is(&TokenKind::Symbol('(')) {
                 self.bump();
                 let mut bindings = Vec::new();
@@ -3634,6 +3646,7 @@ impl Parser {
                     name: format!("__orust_tuple_pattern__{}", bindings.join(",")),
                     initializer,
                     declared_type: None,
+                    mutable,
                 });
             }
             if self.is(&TokenKind::Symbol('[')) {
@@ -3684,6 +3697,7 @@ impl Parser {
                 name,
                 initializer,
                 declared_type: None,
+                mutable,
             })
         } else if self.starts_typed_local() {
             let declared_type = self.ty()?;
@@ -3695,6 +3709,7 @@ impl Parser {
                 name,
                 initializer,
                 declared_type: Some(declared_type),
+                mutable: false,
             })
         } else if self.is(&TokenKind::Keyword("print".into())) {
             self.bump();

@@ -253,7 +253,7 @@ orust run
 
 ORust generates Rust under `target/rust/`. Cargo compiles that Rust and runs
 the resulting binary. New projects contain a standard `Cargo.toml` with
-`orust-runtime = "=0.1.9"`; Cargo fetches the published runtime automatically when
+`orust-runtime = "=0.1.12"`; Cargo fetches the published runtime automatically when
 the project is first built. The runtime is a project dependency, not a global
 command.
 

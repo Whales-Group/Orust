@@ -15,7 +15,7 @@ impl Values {
 }
 fn main() -> () {
     orust_runtime::install_panic_hook();
-    let values = Values::new();
+    let mut values = Values::new();
     println!("{}", values.label);
     println!("{}", values.numbers);
 }

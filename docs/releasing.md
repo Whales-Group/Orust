@@ -1,15 +1,17 @@
 # ORust releases
 
-This is the short version. There are two normal actions:
+This is the short version. There are three normal flows:
 
 1. release a new version;
-2. install or inspect an existing version.
+2. push a fix to `main` without releasing;
+3. publish a patch release after a previous release.
 
-## Release a new version
+## Flow 1: release a new version
 
-Use a new version every time. Never move or reuse a tag that already exists.
+Use this when users should receive a new published ORust version.
 
-Replace `0.1.12` below with the next version you want to release.
+Replace `0.1.12` below with the next version you want to release. The tag will
+be `v0.1.12`.
 
 ### 1. Make and test your changes
 
@@ -88,9 +90,53 @@ Open the repository's **Actions** tab. When it finishes, open
 The release should contain archives for macOS ARM, macOS Intel, Linux, and
 Windows, plus `SHA256SUMS`.
 
+## Flow 2: push a fix without releasing
+
+Use this when the fix is still development work and users do not need a new
+download yet.
+
+Do not bump the version, publish the runtime, or create a tag:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+git add -u
+git commit -m "Fix <short description>"
+git push origin main
+```
+
+This updates `main` only. Existing tags and released binaries do not change.
+Users installing `v0.1.12` will still receive the old `v0.1.12` code.
+
+## Flow 3: publish a patch after a release
+
+If users need the fix, you must create a new patch version. You cannot send a
+new patch through an existing tag such as `v0.1.12`, because Git tags and
+published crates are immutable release identifiers.
+
+For a fix after `v0.1.12`, use `v0.1.13`:
+
+```sh
+# Fix the code first, then run the tests from Flow 1.
+scripts/release.sh 0.1.13
+git add -u
+git commit -m "Prepare release v0.1.13"
+git push origin main
+
+cargo publish -p orust-runtime --dry-run
+cargo publish -p orust-runtime
+
+git tag -a v0.1.13 -m "ORust v0.1.13"
+git push origin v0.1.13
+```
+
+The new tag starts a new GitHub Actions release workflow.
+
 ## If a release fails
 
-Do not push the same tag again and do not force-move the tag.
+Do not push the same tag again and do not force-move the tag. Use Flow 2 to
+push the fix to `main`, then Flow 3 to publish the next patch version.
 
 1. Read the failed job's last red step.
 2. Fix the problem on `main`.
@@ -190,6 +236,26 @@ orust --version
 orust-lsp --version
 orust doctor
 ```
+
+### If you downloaded an archive manually
+
+The archive is for testing or manual installation. It is not opened by
+double-clicking. From Terminal, run:
+
+```sh
+cd ~/Downloads/orust-0.1.12-macos-aarch64
+chmod +x ./orust ./orust-lsp
+ORUST_BIN="$PWD/orust"
+"${ORUST_BIN}" --version
+"${ORUST_BIN}" new "$HOME/hello-orust"
+(cd "$HOME/hello-orust" && "${ORUST_BIN}" check)
+```
+
+Replace the folder name with the archive you downloaded. Use
+`macos-aarch64` for Apple Silicon and `macos-x86_64` for Intel Macs.
+
+For a normal installation, use the one-command installer above. It installs
+both binaries and configures the PATH automatically.
 
 ### Install on Windows
 

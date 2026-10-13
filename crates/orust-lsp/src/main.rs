@@ -532,8 +532,20 @@ impl Backend {
     fn local_symbols(source: &str) -> Vec<Symbol> {
         let mut symbols = Vec::new();
         let mut cursor = 0;
-        while let Some(relative) = source[cursor..].find("var ") {
-            let start = cursor + relative + 4;
+        while cursor < source.len() {
+            let remainder = &source[cursor..];
+            let Some((relative, prefix, immutable)) = [
+                (remainder.find("final var "), "final var ", true),
+                (remainder.find("var "), "var ", false),
+            ]
+            .into_iter()
+            .filter_map(|(relative, prefix, immutable)| {
+                relative.map(|offset| (offset, prefix, immutable))
+            })
+            .min_by_key(|(offset, _, _)| *offset) else {
+                break;
+            };
+            let start = cursor + relative + prefix.len();
             let end = start
                 + source[start..]
                     .bytes()
@@ -545,7 +557,11 @@ impl Backend {
                     kind: SymbolKind::VARIABLE,
                     span: Span { start, end },
                     exported: false,
-                    signature: "inferred local".into(),
+                    signature: if immutable {
+                        "final inferred local".into()
+                    } else {
+                        "inferred local".into()
+                    },
                     docs: String::new(),
                     rust_name: None,
                 });
@@ -1209,6 +1225,7 @@ impl LanguageServer for Backend {
             "error",
             "void",
             "var",
+            "final",
             "new",
             "return",
             "if",
@@ -1540,6 +1557,18 @@ mod tests {
         let offset = source.find("café").unwrap() + "café".len();
         let position = Backend::line_col(source, offset);
         assert_eq!(Backend::offset_at(source, position), offset);
+    }
+
+    #[test]
+    fn local_symbols_include_mutable_and_final_inferred_locals() {
+        let symbols = Backend::local_symbols(
+            "void main() { var count = 0; if (true) { final var count = 1; } }",
+        );
+        assert_eq!(symbols.len(), 2);
+        assert_eq!(symbols[0].name, "count");
+        assert_eq!(symbols[0].signature, "inferred local");
+        assert_eq!(symbols[1].name, "count");
+        assert_eq!(symbols[1].signature, "final inferred local");
     }
 
     #[test]

@@ -24,9 +24,9 @@ fn edit(value: &mut Counter) -> () {
 }
 fn main() -> () {
     orust_runtime::install_panic_hook();
-    let counter = Counter::new();
+    let mut counter = Counter::new();
     edit(&mut counter);
     show(&counter);
-    let copyOfCounter = counter.clone();
+    let mut copyOfCounter = counter.clone();
     println!("{}", copyOfCounter.get());
 }

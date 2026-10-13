@@ -3,6 +3,6 @@ fn choose(value: Option<String>) -> Option<String> {
 }
 fn main() -> () {
     orust_runtime::install_panic_hook();
-    let value = None;
+    let mut value = None;
     println!("{}", choose(value));
 }

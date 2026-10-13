@@ -1064,6 +1064,7 @@ fn string_length_index_warnings(program: &orust_syntax::Program) {
                     name,
                     initializer,
                     declared_type,
+                    ..
                 } => {
                     if declared_type.as_deref() == Some("String")
                         || matches!(initializer, Expr::String(_))

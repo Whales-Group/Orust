@@ -6,7 +6,7 @@ fn emits_expression_block_and_spawn_move_closures() {
     .unwrap();
     let output = orust_emit::emit(&program);
     assert!(output.contains("Box<dyn Fn(i64) -> i64>"), "{output}");
-    assert!(output.contains("let inc = |value| value + 1;"));
+    assert!(output.contains("let mut inc = |value| value + 1;"));
     assert!(output.contains("orust_runtime::spawn(move |value| {"));
 }
 

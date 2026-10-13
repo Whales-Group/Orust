@@ -6,6 +6,6 @@ async fn fetch() -> i64 {
 #[tokio::main]
 async fn main() -> () {
     orust_runtime::install_panic_hook();
-    let value = fetch().await;
+    let mut value = fetch().await;
     println!("{}", value);
 }

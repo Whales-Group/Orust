@@ -41,7 +41,7 @@ the same crates.io dependency:
 
 ```toml
 [dependencies]
-orust-runtime = "=0.1.9"
+orust-runtime = "=0.1.12"
 ```
 
 ## Public API areas

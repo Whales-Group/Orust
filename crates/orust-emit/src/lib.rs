@@ -1673,6 +1673,7 @@ fn rewrite_newtype_value_statements(
                 name,
                 initializer,
                 declared_type,
+                mutable: _,
             } => {
                 let inferred = declared_type.clone().or_else(|| match initializer {
                     Expr::New(type_name) => Some(type_name.clone()),
@@ -4000,10 +4001,22 @@ fn emit_shared_method(
                 render_shared_expr(value, fields, uses_spawn, function.is_async)
             )),
             Stmt::Var {
-                name, initializer, ..
+                name,
+                initializer,
+                mutable,
+                ..
             } => out.push_str(&format!(
-                "        let {} = {};\n",
-                binding_source(name),
+                "        let{} {} = {};\n",
+                if *mutable && !name.starts_with("__orust_tuple_pattern__") {
+                    " mut"
+                } else {
+                    ""
+                },
+                if *mutable {
+                    mutable_binding_source(name)
+                } else {
+                    binding_source(name)
+                },
                 render_shared_expr(initializer, fields, uses_spawn, function.is_async)
             )),
             _ => out.push_str("        // complex control flow is lowered in a later pass\n"),
@@ -4881,14 +4894,26 @@ fn emit_function(
                 name,
                 initializer,
                 declared_type,
+                mutable,
             } => out.push_str(&format!(
                 "    let{} {}{} = {};\n",
-                if local_needs_mut(name, initializer, &f.body, method_mutability) {
+                // `var` is ORust's convenient inferred, mutable local form.
+                // Explicitly typed locals keep the existing immutable-by-default
+                // behavior unless the emitter can prove they need mutation.
+                if (*mutable
+                    && declared_type.is_none()
+                    && !name.starts_with("__orust_tuple_pattern__"))
+                    || local_needs_mut(name, initializer, &f.body, method_mutability)
+                {
                     " mut"
                 } else {
                     ""
                 },
-                binding_source(name),
+                if *mutable || local_needs_mut(name, initializer, &f.body, method_mutability) {
+                    mutable_binding_source(name)
+                } else {
+                    binding_source(name)
+                },
                 declared_type
                     .as_ref()
                     .map(|ty| format!(": {}", rust_type_for(ty, interfaces, with_spawn)))
@@ -5598,6 +5623,19 @@ fn binding_source(name: &str) -> String {
         .unwrap_or_else(|| name.to_string())
 }
 
+fn mutable_binding_source(name: &str) -> String {
+    if let Some(bindings) = name.strip_prefix("__orust_tuple_pattern__") {
+        let bindings = bindings
+            .split(',')
+            .map(|binding| format!("mut {}", binding.trim()))
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("({bindings})")
+    } else {
+        name.to_string()
+    }
+}
+
 fn emit_block(out: &mut String, body: &[orust_syntax::Spanned<Stmt>], indent: usize) {
     for statement in body {
         emit_simple(out, &statement.node, indent);
@@ -5617,11 +5655,23 @@ fn emit_simple(out: &mut String, statement: &Stmt, indent: usize) {
     let pad = "    ".repeat(indent);
     match statement {
         Stmt::Var {
-            name, initializer, ..
+            name,
+            initializer,
+            mutable,
+            ..
         } => out.push_str(&format!(
-            "{}let mut {} = {};\n",
+            "{}let{} {} = {};\n",
             pad,
-            binding_source(name),
+            if *mutable && !name.starts_with("__orust_tuple_pattern__") {
+                " mut"
+            } else {
+                ""
+            },
+            if *mutable {
+                mutable_binding_source(name)
+            } else {
+                binding_source(name)
+            },
             expr(initializer)
         )),
         Stmt::PatternVar {
@@ -6366,11 +6416,23 @@ fn emit_try_statement(out: &mut String, statement: &Stmt, indent: usize) {
     let pad = "    ".repeat(indent);
     match statement {
         Stmt::Var {
-            name, initializer, ..
+            name,
+            initializer,
+            mutable,
+            ..
         } => out.push_str(&format!(
-            "{}let {} = {};\n",
+            "{}let{} {} = {};\n",
             pad,
-            binding_source(name),
+            if *mutable && !name.starts_with("__orust_tuple_pattern__") {
+                " mut"
+            } else {
+                ""
+            },
+            if *mutable {
+                mutable_binding_source(name)
+            } else {
+                binding_source(name)
+            },
             expr_try(initializer)
         )),
         Stmt::PatternVar {

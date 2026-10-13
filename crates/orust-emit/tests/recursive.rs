@@ -405,7 +405,7 @@ fn emits_tuple_destructuring_declarations() {
     let program = parse("void main() { var (left, right) = (1, 2); print(left); } ").unwrap();
     let generated = emit(&program);
     assert!(
-        generated.contains("let (left,right) = (1, 2);"),
+        generated.contains("let (mut left,mut right) = (1, 2);"),
         "{generated}"
     );
 }

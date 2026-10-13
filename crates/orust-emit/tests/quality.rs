@@ -131,7 +131,7 @@ fn rewrites_rust_names_in_source_references() {
     .unwrap();
     let output = orust_emit::emit(&program);
     assert!(output.contains("pub struct ExternalUser"));
-    assert!(output.contains("let user = ExternalUser::new()"));
+    assert!(output.contains("let mut user = ExternalUser::new()"));
 }
 
 #[test]
@@ -377,4 +377,26 @@ fn emits_factory_constructors_as_named_associated_builders() {
     let output = orust_emit::emit(&program);
     assert!(output.contains("fn from(text: String) -> Self"));
     assert!(output.contains("return Reader::new(text);"));
+}
+
+#[test]
+fn inferred_locals_are_mutable_and_nested_locals_can_shadow() {
+    let program = orust_syntax::parse(
+        "void main() { var attempts = 0; attempts = attempts + 1; if (true) { var attempts = 10; attempts = attempts + 1; print(attempts); } print(attempts); }",
+    )
+    .unwrap();
+    let output = orust_emit::emit(&program);
+    assert_eq!(output.matches("let mut attempts").count(), 2);
+    assert!(output.contains("attempts = attempts + 1;"));
+}
+
+#[test]
+fn final_inferred_locals_remain_immutable() {
+    let program = orust_syntax::parse(
+        "void main() { final var maximum = 100; var attempts = 0; attempts = attempts + 1; print(maximum); }",
+    )
+    .unwrap();
+    let output = orust_emit::emit(&program);
+    assert!(output.contains("let maximum = 100;"));
+    assert!(output.contains("let mut attempts = 0;"));
 }
